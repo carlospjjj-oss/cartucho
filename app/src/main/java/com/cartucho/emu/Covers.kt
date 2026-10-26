@@ -26,7 +26,8 @@ import java.util.concurrent.Executors
  *   <console>/<game name>.png, e.g. GBA/Eclat Pourpre.png.
  * - Then ScreenScraper, when the player entered an account (by CRC for
  *   GB/GBA, by name and size otherwise).
- * - Then the libretro thumbnail collection. Its names follow No-Intro
+ * - Then the libretro thumbnail collection.
+ * - Last TheGamesDB, with the player's API key (it has a monthly allowance). Its names follow No-Intro
  *   ("Pokemon - FireRed Version (USA, Europe)"); files named differently
  *   ("Pokemon Fire Red (PT-BR).gba") are matched by similarity against the
  *   collection's list of names, which ships inside the APK (built by CI) so
@@ -93,6 +94,7 @@ class Covers(private val context: Context) {
         synchronized(indexes) { indexes.clear() }
         memory.evictAll()
         ssPausedUntil = 0L
+        tgdbPausedUntil = 0L
     }
 
     private fun key(game: Game) = game.system.name + "/" + sanitize(game.fileName.substringBeforeLast('.'))
@@ -152,11 +154,87 @@ class Covers(private val context: Context) {
                 }
             }
         }
+        // TheGamesDB last: its key has a monthly allowance.
+        when (val url = theGamesDbUrl(game)) {
+            null -> {}
+            "" -> offline = true
+            else -> when (download(url, file)) {
+                Fetch.OK -> return decode(file)
+                Fetch.NETWORK -> offline = true
+                Fetch.MISSING -> {}
+            }
+        }
         if (!offline) miss.writeText("")
         return null
     }
 
     private enum class Fetch { OK, MISSING, NETWORK }
+
+    // --- TheGamesDB ------------------------------------------------------------
+
+    private val tgdbLock = Any()
+    @Volatile private var tgdbPausedUntil = 0L
+
+    /**
+     * Front box art from TheGamesDB, searched by name within the console:
+     * null when not configured or not found, "" when it could not be asked
+     * now (allowance used up, bad key, network).
+     */
+    private fun theGamesDbUrl(game: Game): String? {
+        val key = prefs.tgdbKey
+        if (key.isEmpty()) return null
+        if (System.currentTimeMillis() < tgdbPausedUntil) return ""
+        val platform = when (game.system) {
+            GameSystem.GBA -> 5
+            GameSystem.GB -> if (game.fileName.endsWith(".gbc", true)) 41 else 4
+            GameSystem.NDS -> 8
+            GameSystem.N3DS -> 4912
+        }
+        // Search with the plain title words; the match below is ours.
+        val query = tokens(game.fileName).joinToString(" ").ifEmpty { return null }
+        synchronized(tgdbLock) {
+            val url = "https://api.thegamesdb.net/v1.1/Games/ByGameName?apikey=${enc(key)}" +
+                "&name=${enc(query)}&filter%5Bplatform%5D=$platform&include=boxart"
+            val conn = try { URL(url).openConnection() as HttpURLConnection } catch (e: Exception) { return "" }
+            conn.connectTimeout = 10000
+            conn.readTimeout = 30000
+            conn.setRequestProperty("User-Agent", "Cartucho")
+            return try {
+                val code = conn.responseCode
+                val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                    ?.bufferedReader()?.use { it.readText() } ?: ""
+                if (code != 200) {
+                    tgdbPausedUntil = System.currentTimeMillis() + 30 * 60 * 1000
+                    tgdbStatus(if (code == 401 || code == 403) "Chave recusada ou limite do mês atingido" else "Erro $code")
+                    return ""
+                }
+                val json = JSONObject(body)
+                json.optInt("remaining_monthly_allowance", -1).takeIf { it >= 0 }?.let {
+                    tgdbStatus("Funcionando · $it consultas restantes no mês")
+                }
+                val games = json.optJSONObject("data")?.optJSONArray("games") ?: return null
+                val titles = (0 until games.length()).mapNotNull { games.optJSONObject(it) }
+                    .associate { it.optString("game_title") to it.optInt("id") }
+                val title = bestMatch(game.fileName, titles.keys.toList()) ?: return null
+                val id = titles[title] ?: return null
+                val boxart = json.optJSONObject("include")?.optJSONObject("boxart") ?: return null
+                val base = boxart.optJSONObject("base_url")?.optString("original")
+                    ?: "https://cdn.thegamesdb.net/images/original/"
+                val images = boxart.optJSONObject("data")?.optJSONArray(id.toString()) ?: return null
+                for (i in 0 until images.length()) {
+                    val img = images.optJSONObject(i) ?: continue
+                    if (img.optString("side") == "front") return base + img.optString("filename")
+                }
+                null
+            } catch (e: Exception) {
+                ""
+            } finally {
+                conn.disconnect()
+            }
+        }
+    }
+
+    private fun tgdbStatus(text: String) = Prefs.raw(context).edit().putString("tgdb_status", text).apply()
 
     // --- ScreenScraper -------------------------------------------------------
 
@@ -440,6 +518,9 @@ class Covers(private val context: Context) {
         /** Words of a title without tags, punctuation and filler words. */
         fun tokens(name: String): List<String> {
             var s = name.replace(Regex("\\.[A-Za-z0-9]{2,4}$"), "")
+            // "Pokémon" == "Pokemon": drop accents before comparing.
+            s = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
+                .replace(Regex("\\p{Mn}+"), "")
             s = s.replace(Regex("[\\(\\[][^\\)\\]]*[\\)\\]]"), " ").lowercase()
                 .replace("&", " and ").replace("'", "")
             return s.split(Regex("[^a-z0-9]+")).filter { it.isNotEmpty() && it !in STOP }

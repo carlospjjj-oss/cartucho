@@ -108,6 +108,8 @@ class SettingsActivity : AppCompatActivity() {
             }
             findPreference<Preference>("ss_status")?.summary =
                 Prefs.raw(requireContext()).getString("ss_status", null) ?: "Ainda não usado"
+            findPreference<Preference>("tgdb_status")?.summary =
+                Prefs.raw(requireContext()).getString("tgdb_status", null) ?: "Ainda não usado"
             findPreference<Preference>("backup_export")?.setOnPreferenceClickListener {
                 exportBackup.launch(Backup.defaultName()); true
             }

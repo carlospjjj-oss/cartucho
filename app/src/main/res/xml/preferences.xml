@@ -141,6 +141,21 @@
             app:selectable="false" />
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="TheGamesDB (capas)">
+        <Preference
+            app:key="tgdb_info"
+            app:selectable="false"
+            app:summary="Usado por último, quando nenhuma outra fonte achou a capa. Peça uma chave de API grátis no fórum do TheGamesDB (thegamesdb.net); cada chave tem um limite de consultas por mês." />
+        <EditTextPreference
+            app:key="tgdb_key"
+            app:title="Chave de API"
+            app:summary="Toque para definir" />
+        <Preference
+            app:key="tgdb_status"
+            app:title="Situação"
+            app:selectable="false" />
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="Backup dos saves">
         <Preference
             app:key="backup_export"

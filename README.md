@@ -30,8 +30,8 @@ saves.
 - Biblioteca com capas, filtros por console, favoritos, recentes e busca.
   Capas, em ordem: a que você escolheu; as que o Skraper/EmulationStation
   deixaram na pasta dos jogos (`media/...`, `gamelist.xml`); seu repositório
-  de capas (GitHub ou qualquer site); ScreenScraper (com sua conta); e o
-  acervo libretro (por semelhança de nome).
+  de capas (GitHub ou qualquer site); ScreenScraper (com sua conta); o
+  acervo libretro (por semelhança de nome); e o TheGamesDB (com sua chave).
 - Abre jogos de qualquer pasta do celular (inclusive cartão SD) sem copiar,
   e também jogos dentro de `.zip` e `.7z` (extraídos uma vez, na primeira vez
   que você joga).

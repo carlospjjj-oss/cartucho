@@ -40,6 +40,8 @@ class Prefs(context: Context) {
     val ssDevId: String get() = p.getString("ss_devid", "")!!.trim()
     val ssDevPassword: String get() = p.getString("ss_devpassword", "")!!
 
+    val tgdbKey: String get() = p.getString("tgdb_key", "")!!.trim()
+
     val downloadCovers: Boolean get() = p.getBoolean("download_covers", true)
 
     fun setFilter(value: Int) = p.edit().putString("filter", value.toString()).apply()
