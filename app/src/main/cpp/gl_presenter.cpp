@@ -15,9 +15,10 @@ layout(location = 0) in vec2 a_pos;
 layout(location = 1) in vec2 a_uv;
 uniform vec2 u_uv_scale;   // part of the texture holding the picture
 uniform float u_flip;      // 1.0 when the picture is stored bottom-up
+uniform vec4 u_crop;       // shown part of the picture: x0, y0, x1, y1 (top-left origin)
 out vec2 v_uv;
 void main() {
-    vec2 uv = a_uv;
+    vec2 uv = mix(u_crop.xy, u_crop.zw, a_uv);
     if (u_flip > 0.5) uv.y = 1.0 - uv.y;
     v_uv = uv * u_uv_scale;
     gl_Position = vec4(a_pos, 0.0, 1.0);
@@ -181,6 +182,7 @@ bool GlPresenter::Init() {
     u_out_size_ = glGetUniformLocation(program_, "u_out_size");
     u_uv_scale_ = glGetUniformLocation(program_, "u_uv_scale");
     u_flip_ = glGetUniformLocation(program_, "u_flip");  // vertex and fragment
+    u_crop_ = glGetUniformLocation(program_, "u_crop");
     glUseProgram(program_);
     glUniform1i(glGetUniformLocation(program_, "u_tex"), 0);
 
@@ -331,9 +333,33 @@ Rect GlPresenter::FitRect(float aspect, unsigned src_w, unsigned src_h, int sw, 
     return r;
 }
 
-void GlPresenter::Draw(const CoreHost& host, int surface_width, int surface_height) {
+FrameSource GlPresenter::Prepare(const CoreHost& host) {
     const VideoFrame& frame = host.frame();
+    FrameSource s;
+    if (!program_ || frame.width == 0 || frame.height == 0)
+        return s;
+    s.frame_w = frame.width;
+    s.frame_h = frame.height;
+    s.aspect = host.aspect();
+    if (frame.hw) {
+        if (!hw_color_)
+            return FrameSource{};
+        s.texture = hw_color_;
+        s.uv_w = static_cast<float>(frame.width) / hw_w_;
+        s.uv_h = static_cast<float>(frame.height) / hw_h_;
+        s.flip = host.hw_render().bottom_left_origin;
+    } else {
+        UploadSoftware(frame);
+        s.texture = sw_texture_;
+    }
+    return s;
+}
 
+void GlPresenter::Draw(const CoreHost& host, int surface_width, int surface_height) {
+    DrawSource(Prepare(host), surface_width, surface_height);
+}
+
+void GlPresenter::DrawSource(const FrameSource& source, int surface_width, int surface_height) {
     // The core may have left anything bound; take back what we use.
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDisable(GL_DEPTH_TEST);
@@ -346,40 +372,34 @@ void GlPresenter::Draw(const CoreHost& host, int surface_width, int surface_heig
     glClearColor(0.f, 0.f, 0.f, 1.f);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    if (!program_ || frame.width == 0 || frame.height == 0) {
+    if (!program_ || !source.valid() || !show_picture_ || crop_.w() <= 0.f || crop_.h() <= 0.f) {
         viewport_ = Rect{};
         return;
     }
 
     glActiveTexture(GL_TEXTURE0);
     glBindSampler(0, 0);
-    float uv_w = 1.f, uv_h = 1.f, flip = 0.f;
-    if (frame.hw) {
-        if (!hw_color_)
-            return;
-        glBindTexture(GL_TEXTURE_2D, hw_color_);
-        uv_w = static_cast<float>(frame.width) / hw_w_;
-        uv_h = static_cast<float>(frame.height) / hw_h_;
-        flip = host.hw_render().bottom_left_origin ? 1.f : 0.f;
-    } else {
-        UploadSoftware(frame);
-        glBindTexture(GL_TEXTURE_2D, sw_texture_);
-    }
+    glBindTexture(GL_TEXTURE_2D, source.texture);
     const bool linear = filter_ == Filter::kSmooth || filter_ == Filter::kSharpSmooth;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, linear ? GL_LINEAR : GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, linear ? GL_LINEAR : GL_NEAREST);
 
-    viewport_ = FitRect(host.aspect(), frame.width, frame.height, surface_width, surface_height);
+    // The shown part keeps its own proportions.
+    const float aspect = source.aspect * crop_.w() / crop_.h();
+    const unsigned crop_w = static_cast<unsigned>(source.frame_w * crop_.w() + 0.5f);
+    const unsigned crop_h = static_cast<unsigned>(source.frame_h * crop_.h() + 0.5f);
+    viewport_ = FitRect(aspect, crop_w, crop_h, surface_width, surface_height);
     glViewport(viewport_.x, surface_height - viewport_.y - viewport_.h, viewport_.w, viewport_.h);
 
     glUseProgram(program_);
     glUniform1i(u_mode_, static_cast<int>(filter_));
-    glUniform2f(u_src_size_, static_cast<float>(frame.width), static_cast<float>(frame.height));
-    glUniform2f(u_out_size_, static_cast<float>(viewport_.w), static_cast<float>(viewport_.h));
-    glUniform2f(u_uv_scale_, uv_w, uv_h);
-    // With the picture flipped, the visible region sits at the bottom of the
-    // texture; uv_scale handles the size, flip handles the direction.
-    glUniform1f(u_flip_, flip);
+    glUniform2f(u_src_size_, static_cast<float>(source.frame_w), static_cast<float>(source.frame_h));
+    // Filters compare screen pixels to picture texels: scale the output
+    // size up to what the whole picture would take at this zoom.
+    glUniform2f(u_out_size_, viewport_.w / crop_.w(), viewport_.h / crop_.h());
+    glUniform2f(u_uv_scale_, source.uv_w, source.uv_h);
+    glUniform1f(u_flip_, source.flip ? 1.f : 0.f);
+    glUniform4f(u_crop_, crop_.x0, crop_.y0, crop_.x1, crop_.y1);
     glBindVertexArray(vao_);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glBindVertexArray(0);

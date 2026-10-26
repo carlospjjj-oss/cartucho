@@ -53,6 +53,9 @@ class GameActivity : AppCompatActivity() {
     private lateinit var linkUi: LinkUi
     private lateinit var cheats: Cheats
     private lateinit var devices: Devices
+    private lateinit var tvMode: TvMode
+    private var onTv = false
+    private lateinit var tvLabel: TextView
     private var lastRumble = 0
     private val micPermission = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
@@ -105,6 +108,7 @@ class GameActivity : AppCompatActivity() {
         }
         ErrorReport.gameStarting(this, game)
         cheats = Cheats(this, game)
+        tvMode = TvMode(this, { prefs.tvMode }) { on -> setOnTv(on) }
         devices = Devices(this, prefs) { micPermission.launch(android.Manifest.permission.RECORD_AUDIO) }
         // Azahar reads the accelerometer in g, the others in m/s².
         NativeBridge.setAccelInG(game.system == GameSystem.N3DS)
@@ -170,6 +174,8 @@ class GameActivity : AppCompatActivity() {
 
         glView = GLSurfaceView(this).apply {
             setEGLContextClientVersion(3)
+            // Remember our context: the TV's shares its textures.
+            setEGLContextFactory(SharedGl.mainFactory)
             // 3DS games need depth and stencil in the core's own framebuffer,
             // not on screen; keep the window surface lean.
             setEGLConfigChooser(8, 8, 8, 0, 0, 0)
@@ -180,6 +186,13 @@ class GameActivity : AppCompatActivity() {
             listener = OverlayListener()
             onSelectionChanged = { c -> editPanel.findViewWithTag<View>("size")?.isEnabled = c != null }
         }
+        tvLabel = TextView(this).apply {
+            text = "📺  Jogando na TV"
+            setTextColor(0x99FFFFFF.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+            visibility = View.GONE
+        }
+        root.addView(tvLabel, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER))
         root.addView(overlay, FrameLayout.LayoutParams(MATCH, MATCH))
 
         osd = TextView(this).apply {
@@ -283,6 +296,24 @@ class GameActivity : AppCompatActivity() {
 
     private val landscape get() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
+    /** The TV took the game (true) or gave it back (false). */
+    private fun setOnTv(on: Boolean) {
+        onTv = on
+        applyCoreOptions()
+        // DS: screens stacked 256x384 (gap 0). 3DS default layout: 400x240 top,
+        // 320x240 bottom centred below.
+        val (phone, phonePicture, tv) = when (game.system) {
+            GameSystem.NDS -> Triple(floatArrayOf(0f, 0.5f, 1f, 1f), true, floatArrayOf(0f, 0f, 1f, 0.5f))
+            GameSystem.N3DS -> Triple(floatArrayOf(0.1f, 0.5f, 0.9f, 1f), true, floatArrayOf(0f, 0f, 1f, 0.5f))
+            else -> Triple(null, false, null)
+        }
+        glView.queueEvent { NativeBridge.setTvMode(on, phone, phonePicture, tv) }
+        tvLabel.visibility = if (on && !phonePicture) View.VISIBLE else View.GONE
+        overlay.configure(game.system, landscape)
+        applyDisplay()
+        showMessage(if (on) "Jogo na TV — o celular é o controle" else "Jogo de volta no celular")
+    }
+
     private fun applyCoreOptions() {
         if (game.system == GameSystem.NDS) {
             NativeBridge.setOption("melonds_render_mode", "software")
@@ -293,10 +324,11 @@ class GameActivity : AppCompatActivity() {
             NativeBridge.setOption("melonds_show_cursor", "disabled")
             NativeBridge.setOption("melonds_show_bios_warnings", "disabled")
             NativeBridge.setOption("melonds_number_of_screen_layouts", "1")
-            val layout = prefs.ndsLayout.let {
+            val layout = if (onTv) "top-bottom" else prefs.ndsLayout.let {
                 if (it == "auto") (if (landscape) "left-right" else "top-bottom") else it
             }
             NativeBridge.setOption("melonds_screen_layout1", layout)
+            if (onTv) NativeBridge.setOption("melonds_screen_gap", "0")
             return
         }
         if (game.system != GameSystem.N3DS) {
@@ -317,8 +349,8 @@ class GameActivity : AppCompatActivity() {
         NativeBridge.setOption("citra_shaders_accurate_mul", if (prefs.n3dsFastShaders) "disabled" else "enabled")
         NativeBridge.setOption("citra_texture_filter", prefs.n3dsTextureFilter)
         NativeBridge.setOption("citra_is_new_3ds", if (prefs.n3dsNew3ds) "New 3DS" else "Old 3DS")
-        NativeBridge.setOption("citra_swap_screen", if (prefs.n3dsSwapScreens) "Bottom" else "Top")
-        val layout = prefs.n3dsLayout.let {
+        NativeBridge.setOption("citra_swap_screen", if (prefs.n3dsSwapScreens && !onTv) "Bottom" else "Top")
+        val layout = if (onTv) "default" else prefs.n3dsLayout.let {
             if (it == "auto") (if (landscape) "large_screen" else "default") else it
         }
         NativeBridge.setOption("citra_layout_option", layout)
@@ -374,6 +406,7 @@ class GameActivity : AppCompatActivity() {
         resumed = true
         if (!rendererSet) return
         glView.onResume()
+        if (::tvMode.isInitialized) tvMode.resume()
         if (modalCount == 0 && !overlay.editMode) NativeBridge.setPaused(false)
         if (loaded) NativeBridge.startAudio()
     }
@@ -381,6 +414,7 @@ class GameActivity : AppCompatActivity() {
     override fun onPause() {
         resumed = false
         if (::devices.isInitialized) devices.stop()
+        if (::tvMode.isInitialized) tvMode.pause()
         if (rendererSet) {
             NativeBridge.setPaused(true)
             NativeBridge.stopAudio()
@@ -408,6 +442,7 @@ class GameActivity : AppCompatActivity() {
         NativeBridge.setPaused(true)
         NativeBridge.stopAudio()
         if (::linkUi.isInitialized) linkUi.release()
+        if (::tvMode.isInitialized) tvMode.stop()
         glView.queueEvent {
             NativeBridge.linkStop()
             NativeBridge.close()
@@ -434,6 +469,10 @@ class GameActivity : AppCompatActivity() {
                 runOnUiThread { fail(error) }
                 return
             }
+            if (loaded) {
+                // A new phone context: the TV must share the new one.
+                runOnUiThread { tvMode.refresh() }
+            }
             if (!loaded) {
                 loaded = true
                 // Still on the GL thread: the core is ready for its codes.
@@ -446,6 +485,7 @@ class GameActivity : AppCompatActivity() {
                     applyDisplay()
                     if (resumed) NativeBridge.startAudio()
                     showMessage(game.title)
+                    tvMode.start()
                 }
             }
         }
@@ -634,8 +674,8 @@ class GameActivity : AppCompatActivity() {
              else getString(R.string.speed_x, prefs.fastForwardSpeed.toInt())) to { toggleFastForward() },
             getString(R.string.menu_filter) to { pickFilter() },
         )
-        if (game.system == GameSystem.N3DS) items += getString(R.string.menu_screen_layout) to { pickLayout() }
-        if (game.system == GameSystem.NDS) items += getString(R.string.menu_screen_layout) to { pickNdsLayout() }
+        if (game.system == GameSystem.N3DS && !onTv) items += getString(R.string.menu_screen_layout) to { pickLayout() }
+        if (game.system == GameSystem.NDS && !onTv) items += getString(R.string.menu_screen_layout) to { pickNdsLayout() }
         if ((game.system == GameSystem.GBA || game.system == GameSystem.GB) && NativeBridge.linkSupported())
             items += (if (linkUi.connected) "Link cable: conectado" else "Link cable (rede)") to { linkUi.show() }
         if (game.system != GameSystem.N3DS) items += "Trapaças" + (if (cheats.list.any { it.enabled }) " (ativas)" else "") to {

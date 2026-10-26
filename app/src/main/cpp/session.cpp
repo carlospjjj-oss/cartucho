@@ -261,18 +261,81 @@ void Session::Frame(double now) {
             host_->FlushSaveRam();
         }
     }
-    presenter_.Draw(*host_, width_, height_);
+    const FrameSource source = presenter_.Prepare(*host_);
+    presenter_.DrawSource(source, width_, height_);
+    if (tv_mode_)
+        PublishForTv(source);
+}
+
+// --- TV ------------------------------------------------------------------------
+
+void Session::SetTvMode(bool on, const Crop& phone, bool phone_picture, const Crop& tv) {
+    if (on) {
+        presenter_.set_crop(phone);
+        presenter_.set_show_picture(phone_picture);
+    } else {
+        presenter_.set_crop(Crop{});
+        presenter_.set_show_picture(true);
+    }
+    {
+        std::lock_guard<std::mutex> lock(tv_mutex_);
+        tv_crop_ = tv;
+        if (!on && tv_fence_) {
+            glDeleteSync(tv_fence_);
+            tv_fence_ = nullptr;
+        }
+    }
+    tv_mode_ = on;
+}
+
+void Session::PublishForTv(const FrameSource& source) {
+    // The texture writes so far must land before the TV samples them.
+    GLsync fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    glFlush();
+    std::lock_guard<std::mutex> lock(tv_mutex_);
+    if (tv_fence_)
+        glDeleteSync(tv_fence_);
+    tv_fence_ = fence;
+    tv_source_ = source;
+}
+
+void Session::TvSurfaceCreated() {
+    tv_presenter_.Init();
+}
+
+void Session::TvSurfaceChanged(int width, int height) {
+    tv_w_ = std::max(width, 1);
+    tv_h_ = std::max(height, 1);
+}
+
+void Session::TvDraw() {
+    FrameSource source;
+    {
+        std::lock_guard<std::mutex> lock(tv_mutex_);
+        if (tv_fence_)
+            glWaitSync(tv_fence_, 0, GL_TIMEOUT_IGNORED);
+        source = tv_source_;
+        tv_presenter_.set_crop(tv_crop_);
+    }
+    // Same look as on the phone.
+    tv_presenter_.set_filter(presenter_.filter());
+    tv_presenter_.DrawSource(source, tv_w_, tv_h_);
 }
 
 void Session::Touch(float x, float y, bool pressed) {
     const Rect r = presenter_.viewport();
+    const Crop crop = presenter_.crop();
     if (r.w <= 0 || r.h <= 0) {
         host_->SetPointer(-0x8000, -0x8000, false);
         return;
     }
-    const float nx = (x - r.x) / r.w;
-    const float ny = (y - r.y) / r.h;
-    if (nx < 0.f || nx > 1.f || ny < 0.f || ny > 1.f) {
+    const float cx = (x - r.x) / r.w;
+    const float cy = (y - r.y) / r.h;
+    // The phone may show only part of the picture (TV mode): back to the
+    // whole picture's coordinates.
+    const float nx = crop.x0 + cx * crop.w();
+    const float ny = crop.y0 + cy * crop.h();
+    if (cx < 0.f || cx > 1.f || cy < 0.f || cy > 1.f) {
         // libretro's "outside the picture" value.
         host_->SetPointer(-0x8000, -0x8000, false);
         return;

@@ -82,6 +82,13 @@ object NativeBridge {
     external fun setRunAhead(frames: Int)
     external fun runAheadPossible(): Boolean
 
+    // TV mode. setTvMode: main GL thread; tv*: the TV's GL thread.
+    /** Crops are x0, y0, x1, y1 fractions of the picture. */
+    external fun setTvMode(on: Boolean, phoneCrop: FloatArray?, phonePicture: Boolean, tvCrop: FloatArray?)
+    external fun tvSurfaceCreated()
+    external fun tvSurfaceChanged(width: Int, height: Int)
+    external fun tvDrawFrame()
+
     // Network link (GBA / GB). linkStart and linkStop: GL thread.
     external fun linkSupported(): Boolean
     /** mode: 0 GBA cable, 1 GBA wireless adapter, 2 Game Boy cable. */

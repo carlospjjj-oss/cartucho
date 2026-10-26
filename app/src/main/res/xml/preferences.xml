@@ -67,6 +67,14 @@
             app:defaultValue="true" />
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="TV">
+        <SwitchPreferenceCompat
+            app:key="tv_mode"
+            app:title="Modo TV automático"
+            app:summary="Com o celular ligado a uma TV (cabo HDMI, Chromecast ou Smart View), o jogo vai para a TV e o celular vira o controle. No DS e 3DS a tela de toque fica no celular"
+            app:defaultValue="true" />
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="Sensores do celular">
         <SwitchPreferenceCompat
             app:key="motion"

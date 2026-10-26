@@ -49,6 +49,12 @@ saves.
 - Filtros de imagem: nítido, suave, nítido suave, tela LCD, linhas de TV e
   bordas arredondadas Scale2x/Scale3x; no 3DS, filtros de textura do Azahar
   (xBRZ, ScaleForce, MMPX, Anime4K) e cache de shaders.
+- **Modo TV:** com o celular ligado a uma TV (HDMI, Chromecast/Smart View),
+  o jogo vai para a TV e o celular vira o controle; no DS e 3DS a tela de cima
+  fica na TV e a de toque no celular.
+- Sensor de movimento (jogos de inclinar), vibração (celular ou controle) e
+  microfone (DS: botão MIC; 3DS: quando o jogo pede).
+- Run-ahead (1 ou 2 quadros) para menos atraso nos botões no GB e GBA.
 - Backup dos saves num .zip (inclusive direto no Google Drive) e restauração.
 - Relatório de erro pronto para copiar ou compartilhar.
 - 3DS: duas telas com toque na tela de baixo, analógico, ZL/ZR, layouts

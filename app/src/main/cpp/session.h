@@ -86,6 +86,16 @@ public:
     int link_state() const { return link_state_; }
     std::string link_message();
 
+    // --- TV (a second display in a GL context sharing objects with ours) ----
+    // Main GL thread: what the phone shows in TV mode (DS/3DS: the bottom
+    // screen; GB/GBA: no picture) and what the TV shows.
+    void SetTvMode(bool on, const Crop& phone, bool phone_picture, const Crop& tv);
+    bool tv_mode() const { return tv_mode_; }
+    // TV GL thread.
+    void TvSurfaceCreated();
+    void TvSurfaceChanged(int width, int height);
+    void TvDraw();
+
     // Measured emulation speed (frames per second) over the last second.
     double measured_fps() const { return measured_fps_; }
 
@@ -103,6 +113,17 @@ private:
     int fps_window_frames_ = 0;
     double measured_fps_ = 0.0;
     double last_flush_ = 0.0;
+
+    // TV: the picture the main thread published, with a fence the TV
+    // context waits on before sampling it.
+    std::mutex tv_mutex_;
+    FrameSource tv_source_;
+    GLsync tv_fence_ = nullptr;
+    GlPresenter tv_presenter_;
+    std::atomic<bool> tv_mode_{false};
+    Crop tv_crop_;
+    int tv_w_ = 1, tv_h_ = 1;
+    void PublishForTv(const FrameSource& source);
 
     void SetupRewind();
     void RunOneFrame();

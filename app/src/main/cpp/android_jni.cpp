@@ -146,6 +146,9 @@ using cartucho::Session;
 namespace {
 
 std::unique_ptr<Session> g_session;
+// The TV draws from its own thread; it must never see the session go away
+// under it (close() takes this too).
+std::mutex g_tv_mutex;
 std::unique_ptr<AudioOutput> g_audio;
 // The audio stream is started and stopped from the UI thread (activity
 // lifecycle) and polled from the render thread.
@@ -330,6 +333,7 @@ JNI_FN(void, flushSave)(JNIEnv*, jobject) {
 
 // GL thread: unloads the game (writing its save) before the process ends.
 JNI_FN(void, close)(JNIEnv*, jobject) {
+    std::lock_guard<std::mutex> tv_lock(g_tv_mutex);
     {
         std::lock_guard<std::mutex> lock(g_audio_mutex);
         if (g_audio)
@@ -537,4 +541,45 @@ JNI_FN(void, setRunAhead)(JNIEnv*, jobject, jint frames) {
 
 JNI_FN(jboolean, runAheadPossible)(JNIEnv*, jobject) {
     return g_session && g_session->run_ahead_possible();
+}
+
+// --- TV mode ----------------------------------------------------------------------
+
+// Main GL thread. Crops are x0, y0, x1, y1 fractions of the picture.
+JNI_FN(void, setTvMode)(JNIEnv* env, jobject, jboolean on, jfloatArray phone, jboolean phone_picture,
+                        jfloatArray tv) {
+    if (!g_session)
+        return;
+    auto crop = [env](jfloatArray a) {
+        cartucho::Crop c;
+        if (a && env->GetArrayLength(a) >= 4) {
+            jfloat v[4];
+            env->GetFloatArrayRegion(a, 0, 4, v);
+            c.x0 = v[0];
+            c.y0 = v[1];
+            c.x1 = v[2];
+            c.y1 = v[3];
+        }
+        return c;
+    };
+    g_session->SetTvMode(on, crop(phone), phone_picture, crop(tv));
+}
+
+// TV GL thread (a context sharing objects with the main one).
+JNI_FN(void, tvSurfaceCreated)(JNIEnv*, jobject) {
+    std::lock_guard<std::mutex> lock(g_tv_mutex);
+    if (g_session)
+        g_session->TvSurfaceCreated();
+}
+
+JNI_FN(void, tvSurfaceChanged)(JNIEnv*, jobject, jint width, jint height) {
+    std::lock_guard<std::mutex> lock(g_tv_mutex);
+    if (g_session)
+        g_session->TvSurfaceChanged(width, height);
+}
+
+JNI_FN(void, tvDrawFrame)(JNIEnv*, jobject) {
+    std::lock_guard<std::mutex> lock(g_tv_mutex);
+    if (g_session && g_session->tv_mode())
+        g_session->TvDraw();
 }

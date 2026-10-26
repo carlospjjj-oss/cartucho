@@ -15,6 +15,7 @@ $CXX pacer_test.cpp $SRC/session.cpp $SRC/rewind.cpp $SRC/runahead.cpp $SRC/core
 $CXX resampler_test.cpp $SRC/resampler.cpp $SRC/core_host.cpp -ldl -o "$OUT/resampler_test"
 gcc -shared -fPIC -O1 -I$SRC fake_hw_core.c -o "$OUT/fake_hw_core.so"
 $CXX gl_test.cpp $SRC/core_host.cpp $SRC/gl_presenter.cpp -lEGL -lGLESv2 -ldl -o "$OUT/gl_test"
+$CXX tv_test.cpp $SRC/core_host.cpp $SRC/gl_presenter.cpp -lEGL -lGLESv2 -ldl -o "$OUT/tv_test"
 $CXX host_test.cpp $SRC/core_host.cpp -ldl -o "$OUT/host_test"
 $CXX rewind_test.cpp $SRC/rewind.cpp $SRC/core_host.cpp -lz -ldl -lpthread -o "$OUT/rewind_test"
 $CXX devices_test.cpp $SRC/core_host.cpp -ldl -o "$OUT/devices_test"
@@ -31,6 +32,7 @@ if ! EGL_PLATFORM=surfaceless "$OUT/gl_test" "$OUT/fake_hw_core.so"; then
     fi
     exit 1
 fi
+EGL_PLATFORM=surfaceless "$OUT/tv_test" "$OUT/fake_hw_core.so"
 if [ $# -ge 2 ]; then
     "$OUT/host_test" "$1" "$2" "$OUT/frame.ppm" 400 2>/dev/null
     CARTUCHO_TEST_FD=1 "$OUT/host_test" "$1" "$2" "$OUT/frame-fd.ppm" 60 2>/dev/null | grep -E "load game|FAIL|passed"

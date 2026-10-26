@@ -31,6 +31,25 @@ struct Rect {
     int x = 0, y = 0, w = 0, h = 0;  // top-left origin, surface pixels
 };
 
+// Part of the core's picture to show, as fractions of it (top-left origin):
+// all of it, or one screen of the DS / 3DS.
+struct Crop {
+    float x0 = 0.f, y0 = 0.f, x1 = 1.f, y1 = 1.f;
+    float w() const { return x1 - x0; }
+    float h() const { return y1 - y0; }
+};
+
+// Where the picture lives, so another GL context sharing objects with this
+// one (the TV) can draw it too.
+struct FrameSource {
+    GLuint texture = 0;
+    unsigned frame_w = 0, frame_h = 0;  // picture size in texels
+    float uv_w = 1.f, uv_h = 1.f;       // part of the texture holding it
+    bool flip = false;                  // stored bottom-up
+    float aspect = 4.f / 3.f;           // display aspect of the whole picture
+    bool valid() const { return texture != 0 && frame_w && frame_h; }
+};
+
 class GlPresenter {
 public:
     GlPresenter() = default;
@@ -50,6 +69,7 @@ public:
     bool ReadHwFrame(unsigned width, unsigned height, bool bottom_up, std::vector<uint8_t>* rgba);
 
     void set_filter(Filter f) { filter_ = f; }
+    Filter filter() const { return filter_; }
     void set_integer_scale(bool on) { integer_scale_ = on; }
     // 0 = centre the picture vertically, 1 = stick it to the top (portrait,
     // leaving the lower half to the on-screen controls).
@@ -60,6 +80,16 @@ public:
 
     // Draws the latest frame. Call every vsync even without a new frame.
     void Draw(const CoreHost& host, int surface_width, int surface_height);
+    // Uploads a new software frame if any and says where the picture is.
+    FrameSource Prepare(const CoreHost& host);
+    // Draws `crop` of `source` (a texture of this or a shared context);
+    // `show_picture` false just clears (the phone in TV mode, GB/GBA).
+    void DrawSource(const FrameSource& source, int surface_width, int surface_height);
+
+    // Which part of the picture this presenter shows.
+    void set_crop(const Crop& crop) { crop_ = crop; }
+    const Crop& crop() const { return crop_; }
+    void set_show_picture(bool on) { show_picture_ = on; }
 
     // Where the picture went on the last Draw(), for mapping touches.
     Rect viewport() const { return viewport_; }
@@ -72,6 +102,9 @@ private:
     GLuint vao_ = 0;
     GLuint vbo_ = 0;
     GLint u_mode_ = -1, u_src_size_ = -1, u_out_size_ = -1, u_uv_scale_ = -1, u_flip_ = -1;
+    GLint u_crop_ = -1;
+    Crop crop_;
+    bool show_picture_ = true;
     GLuint sw_texture_ = 0;
     unsigned sw_w_ = 0, sw_h_ = 0;
     uint64_t uploaded_serial_ = 0;
