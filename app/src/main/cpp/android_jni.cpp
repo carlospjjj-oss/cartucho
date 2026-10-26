@@ -307,15 +307,19 @@ JNI_FN(jstring, saveState)(JNIEnv* env, jobject, jstring path) {
 // GL thread. Returns null on success, else an error message.
 JNI_FN(jstring, loadState)(JNIEnv* env, jobject, jstring path) {
     std::string error = "No game is running";
-    if (g_session && g_session->host().LoadState(ToStd(env, path), &error))
+    if (g_session && g_session->host().LoadState(ToStd(env, path), &error)) {
+        g_session->ClearRewind();
         return nullptr;
+    }
     return ToJava(env, error);
 }
 
 // GL thread.
 JNI_FN(void, reset)(JNIEnv*, jobject) {
-    if (g_session)
+    if (g_session) {
         g_session->host().Reset();
+        g_session->ClearRewind();
+    }
 }
 
 // GL thread.
@@ -425,4 +429,53 @@ JNI_FN(void, setCrashFile)(JNIEnv* env, jobject, jstring path) {
 
 JNI_FN(jstring, recentLog)(JNIEnv* env, jobject) {
     return ToJava(env, cartucho::RecentLog());
+}
+
+// --- Rewind, cheats, screenshots ------------------------------------------------
+
+JNI_FN(jboolean, rewindAvailable)(JNIEnv*, jobject) {
+    return g_session && g_session->rewind_available();
+}
+
+JNI_FN(void, setRewindEnabled)(JNIEnv*, jobject, jboolean on) {
+    if (g_session)
+        g_session->set_rewind_enabled(on);
+}
+
+// Any thread: hold to go back in time.
+JNI_FN(void, setRewinding)(JNIEnv*, jobject, jboolean on) {
+    if (g_session)
+        g_session->set_rewinding(on);
+}
+
+// GL thread.
+JNI_FN(void, cheatReset)(JNIEnv*, jobject) {
+    if (g_session)
+        g_session->host().CheatReset();
+}
+
+// GL thread. Several code lines go joined with '+', as cores expect.
+JNI_FN(void, cheatSet)(JNIEnv* env, jobject, jint index, jboolean enabled, jstring code) {
+    if (g_session)
+        g_session->host().CheatSet(static_cast<unsigned>(index), enabled, ToStd(env, code));
+}
+
+// GL thread. [width, height, ARGB pixels...] of the current picture, or null.
+JNI_FN(jintArray, screenshot)(JNIEnv* env, jobject) {
+    if (!g_session)
+        return nullptr;
+    std::vector<uint8_t> rgba;
+    int w = 0, h = 0;
+    if (!g_session->Screenshot(&rgba, &w, &h) || rgba.size() < static_cast<size_t>(w) * h * 4)
+        return nullptr;
+    std::vector<jint> out(2 + static_cast<size_t>(w) * h);
+    out[0] = w;
+    out[1] = h;
+    for (size_t i = 0; i < static_cast<size_t>(w) * h; i++) {
+        const uint8_t* p = &rgba[i * 4];
+        out[2 + i] = static_cast<jint>(0xff000000u | (uint32_t(p[0]) << 16) | (uint32_t(p[1]) << 8) | p[2]);
+    }
+    jintArray arr = env->NewIntArray(static_cast<jsize>(out.size()));
+    env->SetIntArrayRegion(arr, 0, static_cast<jsize>(out.size()), out.data());
+    return arr;
 }

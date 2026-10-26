@@ -78,6 +78,8 @@ struct CoreHost::Api {
     bool (*unserialize)(const void*, size_t);
     bool (*load_game)(const retro_game_info*);
     void (*unload_game)();
+    void (*cheat_reset)();
+    void (*cheat_set)(unsigned, bool, const char*);
     void* (*get_memory_data)(unsigned);
     size_t (*get_memory_size)(unsigned);
     bool initialized = false;
@@ -236,6 +238,8 @@ bool CoreHost::LoadCore(const std::string& path, std::string* error) {
     CARTUCHO_SYM(unserialize, "retro_unserialize");
     CARTUCHO_SYM(load_game, "retro_load_game");
     CARTUCHO_SYM(unload_game, "retro_unload_game");
+    CARTUCHO_SYM(cheat_reset, "retro_cheat_reset");
+    CARTUCHO_SYM(cheat_set, "retro_cheat_set");
     CARTUCHO_SYM(get_memory_data, "retro_get_memory_data");
     CARTUCHO_SYM(get_memory_size, "retro_get_memory_size");
 #undef CARTUCHO_SYM
@@ -347,6 +351,32 @@ void CoreHost::SetPointer(int16_t x, int16_t y, bool pressed) {
                            (static_cast<int32_t>(static_cast<uint16_t>(y)) << 16);
     pointer_.store(packed, std::memory_order_relaxed);
     pointer_pressed_.store(pressed, std::memory_order_relaxed);
+}
+
+size_t CoreHost::StateSize() {
+    return game_loaded_ ? api_->serialize_size() : 0;
+}
+
+bool CoreHost::SerializeTo(std::vector<uint8_t>* out) {
+    const size_t size = StateSize();
+    if (size == 0)
+        return false;
+    out->resize(size);
+    return api_->serialize(out->data(), size);
+}
+
+bool CoreHost::UnserializeFrom(const std::vector<uint8_t>& data) {
+    return game_loaded_ && !data.empty() && api_->unserialize(data.data(), data.size());
+}
+
+void CoreHost::CheatReset() {
+    if (game_loaded_)
+        api_->cheat_reset();
+}
+
+void CoreHost::CheatSet(unsigned index, bool enabled, const std::string& code) {
+    if (game_loaded_)
+        api_->cheat_set(index, enabled, code.c_str());
 }
 
 bool CoreHost::SaveState(const std::string& path, std::string* error) {

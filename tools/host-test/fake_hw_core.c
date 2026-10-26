@@ -70,6 +70,8 @@ void retro_run(void) {
     /* Leave state dirty on purpose: the frontend must cope. */
     video(RETRO_HW_FRAME_BUFFER_VALID, 320, 240, 0);
 }
+void retro_cheat_reset(void) {}
+void retro_cheat_set(unsigned i, bool e, const char* c) { (void)i; (void)e; (void)c; }
 size_t retro_serialize_size(void) { return 0; }
 bool retro_serialize(void* d, size_t s) { (void)d; (void)s; return false; }
 bool retro_unserialize(const void* d, size_t s) { (void)d; (void)s; return false; }

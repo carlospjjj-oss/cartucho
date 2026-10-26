@@ -51,6 +51,7 @@ class GameActivity : AppCompatActivity() {
     // Kept open for the whole game: the core reads the ROM through it.
     private var romFile: android.os.ParcelFileDescriptor? = null
     private lateinit var linkUi: LinkUi
+    private lateinit var cheats: Cheats
     @Volatile private var loaded = false
     @Volatile private var resumed = false
     private var fastForward = false
@@ -96,6 +97,7 @@ class GameActivity : AppCompatActivity() {
             return
         }
         ErrorReport.gameStarting(this, game)
+        cheats = Cheats(this, game)
         linkUi = LinkUi(this, glView, game, romCrc, modal)
         // The surface view joins the layout only now: GLSurfaceView crashes
         // if its surface appears before it has a renderer.
@@ -298,6 +300,12 @@ class GameActivity : AppCompatActivity() {
         NativeBridge.setOption("citra_enable_mouse_touchscreen", "disabled")
         NativeBridge.setOption("citra_analog_function", "c_stick")
         NativeBridge.setOption("citra_resolution_factor", prefs.n3dsResolution)
+        // Shaders compiled once are kept on disk, so a game stutters only the
+        // first time it shows each effect.
+        NativeBridge.setOption("citra_use_hw_shader", "enabled")
+        NativeBridge.setOption("citra_use_disk_shader_cache", "enabled")
+        NativeBridge.setOption("citra_shaders_accurate_mul", if (prefs.n3dsFastShaders) "disabled" else "enabled")
+        NativeBridge.setOption("citra_texture_filter", prefs.n3dsTextureFilter)
         NativeBridge.setOption("citra_is_new_3ds", if (prefs.n3dsNew3ds) "New 3DS" else "Old 3DS")
         NativeBridge.setOption("citra_swap_screen", if (prefs.n3dsSwapScreens) "Bottom" else "Top")
         val layout = prefs.n3dsLayout.let {
@@ -321,6 +329,7 @@ class GameActivity : AppCompatActivity() {
         overlay.opacity = prefs.overlayOpacity
         overlay.globalScale = prefs.overlayScale
         overlay.haptics = prefs.haptics
+        overlay.quickButtons = prefs.quickButtons
         overlay.configure(game.system, landscape)
     }
 
@@ -415,7 +424,12 @@ class GameActivity : AppCompatActivity() {
             }
             if (!loaded) {
                 loaded = true
+                // Still on the GL thread: the core is ready for its codes.
+                NativeBridge.setRewindEnabled(prefs.rewind)
+                if (game.system != GameSystem.N3DS) cheats.apply()
+                val canRewind = prefs.rewind && NativeBridge.rewindAvailable()
                 runOnUiThread {
+                    overlay.rewindAvailable = canRewind
                     applyDisplay()
                     if (resumed) NativeBridge.startAudio()
                     showMessage(game.title)
@@ -507,6 +521,69 @@ class GameActivity : AppCompatActivity() {
         override fun onMenu() = showMenu()
 
         override fun onFastForward() = toggleFastForward()
+
+        override fun onRewind(held: Boolean) {
+            if (held && ::linkUi.isInitialized && linkUi.connected) {
+                showMessage("Voltar no tempo fica desligado durante o link")
+                return
+            }
+            NativeBridge.setRewinding(held)
+            if (held) showMessage("« Voltando no tempo")
+        }
+
+        override fun onQuickSave() = quickState(save = true)
+
+        override fun onQuickLoad() = quickState(save = false)
+    }
+
+    /** Slot 0 is the quick slot (the on-screen S / L buttons). */
+    private fun quickState(save: Boolean) {
+        if (!loaded) return
+        val path = stateFile(0).path
+        glView.queueEvent {
+            val error = if (save) NativeBridge.saveState(path) else NativeBridge.loadState(path)
+            runOnUiThread {
+                showMessage(error ?: if (save) "Salvo rápido" else "Carregado o salvo rápido")
+            }
+        }
+    }
+
+    private fun takeScreenshot() {
+        glView.queueEvent {
+            val data = NativeBridge.screenshot()
+            Thread {
+                val message = try {
+                    if (data == null || data.size < 2) throw IllegalStateException("sem imagem")
+                    val w = data[0]
+                    val h = data[1]
+                    val bmp = android.graphics.Bitmap.createBitmap(data, 2, w, w, h, android.graphics.Bitmap.Config.ARGB_8888)
+                    saveScreenshot(bmp)
+                } catch (e: Exception) {
+                    "Não foi possível salvar a captura"
+                }
+                runOnUiThread { showMessage(message) }
+            }.start()
+        }
+    }
+
+    /** Saves to Pictures/Cartucho; returns the message to show. */
+    private fun saveScreenshot(bmp: android.graphics.Bitmap): String {
+        val name = game.saveName.take(60) + "-" +
+            java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(Date()) + ".png"
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, name)
+                put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png")
+                put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Cartucho")
+            }
+            val uri = contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("no uri")
+            contentResolver.openOutputStream(uri)!!.use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            return "Captura salva em Imagens/Cartucho"
+        }
+        val dir = File(getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES), "Cartucho").apply { mkdirs() }
+        File(dir, name).outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        return "Captura salva em ${dir.path}"
     }
 
     private fun toggleFastForward() {
@@ -537,6 +614,10 @@ class GameActivity : AppCompatActivity() {
         if (game.system == GameSystem.NDS) items += getString(R.string.menu_screen_layout) to { pickNdsLayout() }
         if ((game.system == GameSystem.GBA || game.system == GameSystem.GB) && NativeBridge.linkSupported())
             items += (if (linkUi.connected) "Link cable: conectado" else "Link cable (rede)") to { linkUi.show() }
+        if (game.system != GameSystem.N3DS) items += "Trapaças" + (if (cheats.list.any { it.enabled }) " (ativas)" else "") to {
+            cheats.showDialog(this, { b -> modal.show(b) }) { glView.queueEvent { cheats.apply() } }
+        }
+        items += "Captura de tela" to { takeScreenshot() }
         items += getString(R.string.menu_edit_controls) to { startEditing() }
         items += (if (overlay.visibility == View.VISIBLE) getString(R.string.menu_hide_controls)
                   else getString(R.string.menu_show_controls)) to {

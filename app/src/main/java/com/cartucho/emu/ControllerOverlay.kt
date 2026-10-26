@@ -26,7 +26,7 @@ import kotlin.math.min
  */
 class ControllerOverlay(context: Context) : View(context) {
 
-    enum class Kind { BUTTON, DPAD, STICK, MENU, FAST_FORWARD }
+    enum class Kind { BUTTON, DPAD, STICK, MENU, FAST_FORWARD, REWIND, QUICK_SAVE, QUICK_LOAD }
 
     /** One control. Position is the centre, as a fraction of the view size. */
     data class Control(
@@ -49,6 +49,9 @@ class ControllerOverlay(context: Context) : View(context) {
         fun onScreenTouch(x: Float, y: Float, pressed: Boolean)
         fun onMenu()
         fun onFastForward()
+        fun onRewind(held: Boolean)
+        fun onQuickSave()
+        fun onQuickLoad()
     }
 
     var listener: Listener? = null
@@ -57,6 +60,12 @@ class ControllerOverlay(context: Context) : View(context) {
     var globalScale = 1f
         set(value) { field = value; invalidate() }
     var haptics = true
+    /** Show the rewind and quick save/load buttons. */
+    var quickButtons = true
+        set(value) { field = value; invalidate() }
+    /** Whether this game can rewind (hides the button otherwise). */
+    var rewindAvailable = false
+        set(value) { field = value; invalidate() }
     /** Highlights the fast-forward button while active. */
     var fastForwardOn = false
         set(value) { field = value; invalidate() }
@@ -172,6 +181,9 @@ class ControllerOverlay(context: Context) : View(context) {
             // A up and right, B down and left, like the handheld.
             "a" -> place(c, xr + col * 0.23f / areaW, 0.5f, face)
             "b" -> place(c, xr - col * 0.23f / areaW, 0.68f, face)
+            "rewind" -> place(c, xl, 0.37f, col * 0.32f)
+            "qsave" -> place(c, xr - col * 0.2f / areaW, 0.37f, col * 0.3f)
+            "qload" -> place(c, xr + col * 0.2f / areaW, 0.37f, col * 0.3f)
             "select" -> place(c, xl, 0.92f, col * 0.62f)
             "start" -> place(c, xr, 0.92f, col * 0.62f)
         }
@@ -254,7 +266,7 @@ class ControllerOverlay(context: Context) : View(context) {
     private fun controlAt(x: Float, y: Float, kinds: Set<Kind>? = null): Control? {
         // Exact hits first, then the slack zone, smallest control winning
         // (so the gap between A and B still reaches the nearer one).
-        val candidates = controls.filter { kinds == null || it.kind in kinds }
+        val candidates = controls.filter { shown(it) && (kinds == null || it.kind in kinds) }
         candidates.firstOrNull { hit(it, x, y, 1f) }?.let { return it }
         return candidates.filter { hit(it, x, y) }
             .minByOrNull { hypot(x - cx(it), y - cy(it)) / max(halfW(it), halfH(it)) }
@@ -263,15 +275,23 @@ class ControllerOverlay(context: Context) : View(context) {
     // --- Drawing ------------------------------------------------------------
 
     override fun onDraw(canvas: Canvas) {
-        for (c in controls) drawControl(canvas, c)
+        for (c in controls) if (shown(c)) drawControl(canvas, c)
     }
 
     private fun pressed(c: Control): Boolean = when (c.kind) {
         Kind.BUTTON -> pointerControl.values.any { it === c }
         Kind.DPAD -> dpadMask != 0
         Kind.STICK -> pointerControl.values.any { it === c }
-        Kind.MENU -> false
+        Kind.MENU, Kind.QUICK_SAVE, Kind.QUICK_LOAD -> false
         Kind.FAST_FORWARD -> fastForwardOn
+        Kind.REWIND -> pointerControl.values.any { it === c }
+    }
+
+    /** Controls the player can currently see and touch. */
+    private fun shown(c: Control) = when (c.kind) {
+        Kind.REWIND -> quickButtons && rewindAvailable
+        Kind.QUICK_SAVE, Kind.QUICK_LOAD -> quickButtons
+        else -> true
     }
 
     private fun drawControl(canvas: Canvas, c: Control) {
@@ -369,6 +389,13 @@ class ControllerOverlay(context: Context) : View(context) {
             }
             c.kind == Kind.MENU -> { haptic(); listener?.onMenu() }
             c.kind == Kind.FAST_FORWARD -> { haptic(); listener?.onFastForward() }
+            c.kind == Kind.QUICK_SAVE -> { haptic(); listener?.onQuickSave() }
+            c.kind == Kind.QUICK_LOAD -> { haptic(); listener?.onQuickLoad() }
+            c.kind == Kind.REWIND -> {
+                haptic()
+                pointerControl[id] = c
+                listener?.onRewind(true)
+            }
             else -> {
                 pointerControl[id] = c
                 if (c.kind == Kind.DPAD) updateDpad(c, x, y)
@@ -411,6 +438,7 @@ class ControllerOverlay(context: Context) : View(context) {
             return
         }
         val c = pointerControl.remove(id) ?: return
+        if (c.kind == Kind.REWIND) listener?.onRewind(false)
         if (c.kind == Kind.DPAD) dpadMask = 0
         if (c.kind == Kind.STICK) {
             stickX = 0f; stickY = 0f
@@ -419,6 +447,7 @@ class ControllerOverlay(context: Context) : View(context) {
     }
 
     private fun releaseAll() {
+        if (pointerControl.values.any { it.kind == Kind.REWIND }) listener?.onRewind(false)
         pointerControl.clear()
         dpadMask = 0
         if (stickX != 0f || stickY != 0f) listener?.onAnalog(0, 0f, 0f)
@@ -501,8 +530,30 @@ class ControllerOverlay(context: Context) : View(context) {
         private fun dpad(x: Float, y: Float, size: Float) = Control("dpad", Kind.DPAD, "", -1, x, y, size)
         private fun menu(x: Float, y: Float) = Control("menu", Kind.MENU, "☰", -1, x, y, 40f)
         private fun ff(x: Float, y: Float) = Control("ff", Kind.FAST_FORWARD, "»", -1, x, y, 40f)
+        private fun rw(x: Float, y: Float) = Control("rewind", Kind.REWIND, "«", -1, x, y, 40f)
+        private fun qs(x: Float, y: Float) = Control("qsave", Kind.QUICK_SAVE, "S", -1, x, y, 34f)
+        private fun ql(x: Float, y: Float) = Control("qload", Kind.QUICK_LOAD, "L", -1, x, y, 34f)
 
-        fun defaults(system: GameSystem, landscape: Boolean): List<Control> = when (system) {
+        /** Rewind next to fast forward; quick save/load next to the menu. */
+        private fun extras(ffX: Float, ffY: Float, menuX: Float, menuY: Float, landscape: Boolean): List<Control> {
+            val step = if (landscape) 0.055f else 0.12f
+            val toCentreFf = if (ffX < 0.5f) step else -step
+            val toCentreMenu = if (menuX < 0.5f) step else -step
+            return listOf(
+                rw(ffX + toCentreFf, ffY),
+                qs(menuX + toCentreMenu, menuY),
+                ql(menuX + 2 * toCentreMenu, menuY),
+            )
+        }
+
+        fun defaults(system: GameSystem, landscape: Boolean): List<Control> {
+            val base = baseDefaults(system, landscape)
+            val ff = base.first { it.kind == Kind.FAST_FORWARD }
+            val menu = base.first { it.kind == Kind.MENU }
+            return base + extras(ff.x, ff.y, menu.x, menu.y, landscape)
+        }
+
+        private fun baseDefaults(system: GameSystem, landscape: Boolean): List<Control> = when (system) {
             GameSystem.NDS -> if (landscape) listOf(
                 dpad(0.1f, 0.62f, 140f),
                 b("a", "A", Retro.A, 0.945f, 0.6f, 58f),

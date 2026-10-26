@@ -13,6 +13,7 @@ add_library(cartucho SHARED
     core_host.cpp
     gl_presenter.cpp
     resampler.cpp
+    rewind.cpp
     session.cpp
 )
 
@@ -25,4 +26,5 @@ target_link_libraries(cartucho
     android
     log
     dl
+    z
 )

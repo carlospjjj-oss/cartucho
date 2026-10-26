@@ -123,6 +123,16 @@ public:
     size_t QueuedAudioFrames() const { return audio_.Available(); }
     void SetAudioMuted(bool muted) { audio_muted_ = muted; }
 
+    // Save states in memory (rewind). Empty / false when unsupported.
+    bool SerializeTo(std::vector<uint8_t>* out);
+    bool UnserializeFrom(const std::vector<uint8_t>& data);
+    size_t StateSize();
+
+    // Cheat codes in the console's usual formats (GameShark, Action Replay,
+    // CodeBreaker...); the core parses them.
+    void CheatReset();
+    void CheatSet(unsigned index, bool enabled, const std::string& code);
+
     bool SaveState(const std::string& path, std::string* error);
     bool LoadState(const std::string& path, std::string* error);
     // Writes battery save RAM if it changed since the last flush.

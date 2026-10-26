@@ -48,6 +48,47 @@ class SettingsActivity : AppCompatActivity() {
             refreshBios()
         }
 
+        private val exportBackup = registerForActivityResult(
+            ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+            uri ?: return@registerForActivityResult
+            runBackup("Fazendo backup…") {
+                val r = Backup.export(requireContext(), uri)
+                "Backup feito: ${r.files} arquivos (${r.bytes / 1024} KB)."
+            }
+        }
+
+        private val restoreBackup = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri ?: return@registerForActivityResult
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle("Restaurar backup?")
+                .setMessage("Os saves e estados do backup substituem os atuais com o mesmo nome. Os outros ficam como estão.")
+                .setPositiveButton("Restaurar") { _, _ ->
+                    runBackup("Restaurando…") {
+                        val r = Backup.restore(requireContext(), uri)
+                        "Restaurado: ${r.files} arquivos (${r.bytes / 1024} KB)."
+                    }
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+
+        /** Runs a backup task off the main thread with a waiting dialog. */
+        private fun runBackup(title: String, task: () -> String) {
+            val ctx = requireContext()
+            val waiting = MaterialAlertDialogBuilder(ctx).setTitle(title).setCancelable(false).show()
+            Thread {
+                val message = try {
+                    task()
+                } catch (e: Exception) {
+                    e.message ?: "Não deu certo (${e.javaClass.simpleName})."
+                }
+                activity?.runOnUiThread {
+                    waiting.dismiss()
+                    MaterialAlertDialogBuilder(ctx).setMessage(message).setPositiveButton(android.R.string.ok, null).show()
+                }
+            }.start()
+        }
+
         private fun refreshBios() {
             for (bios in Bios.entries) {
                 findPreference<Preference>(bios.key)?.summary =
@@ -58,6 +99,15 @@ class SettingsActivity : AppCompatActivity() {
 
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
             setPreferencesFromResource(R.xml.preferences, rootKey)
+            findPreference<Preference>("backup_export")?.setOnPreferenceClickListener {
+                exportBackup.launch(Backup.defaultName()); true
+            }
+            findPreference<Preference>("backup_restore")?.setOnPreferenceClickListener {
+                restoreBackup.launch(arrayOf("application/zip", "application/octet-stream", "*/*")); true
+            }
+            findPreference<Preference>("error_report")?.setOnPreferenceClickListener {
+                ErrorReport.show(requireActivity() as AppCompatActivity); true
+            }
             for (bios in Bios.entries) {
                 findPreference<Preference>(bios.key)?.setOnPreferenceClickListener {
                     if (bios.installed(requireContext())) {

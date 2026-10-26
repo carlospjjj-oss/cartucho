@@ -132,6 +132,17 @@ int main(int argc, char** argv) {
               bottom[1], bottom[2]);
         WritePpm(OutDir() + "/hw.ppm", px);
 
+        // The edge filters read neighbours in screen directions; a
+        // bottom-up hardware frame must still come out the right way up.
+        for (Filter f : {Filter::kScale2x, Filter::kScale3x}) {
+            presenter.set_filter(f);
+            presenter.Draw(host, kW, kH);
+            auto p2 = ReadScreen();
+            const uint8_t* t = At(p2, kW / 2, kH / 4);
+            const uint8_t* b = At(p2, kW / 2, kH * 3 / 4);
+            CHECK(t[0] > 200 && b[2] > 200, "edge filter %d keeps orientation", static_cast<int>(f));
+        }
+
         // Portrait surface, picture stuck to the top with room for controls.
         presenter.set_vertical_align(1);
         presenter.set_bottom_reserve(0.4f);
@@ -151,7 +162,7 @@ int main(int argc, char** argv) {
               err.c_str());
         for (int i = 0; i < 200; i++)
             host.RunFrame();
-        const char* names[] = {"sharp", "smooth", "sharpsmooth", "lcd", "scanlines"};
+        const char* names[] = {"sharp", "smooth", "sharpsmooth", "lcd", "scanlines", "scale2x", "scale3x"};
         for (int f = 0; f < static_cast<int>(Filter::kCount); f++) {
             presenter.set_filter(static_cast<Filter>(f));
             presenter.Draw(host, kW, kH);

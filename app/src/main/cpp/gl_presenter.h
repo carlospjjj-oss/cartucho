@@ -10,6 +10,7 @@
 #include <GLES3/gl3.h>
 
 #include <cstdint>
+#include <vector>
 
 #include "core_host.h"
 
@@ -21,6 +22,8 @@ enum class Filter : int {
     kSharpSmooth = 2,   // sharp bilinear: crisp, but even at odd scales
     kLcd = 3,           // handheld LCD pixel grid
     kScanlines = 4,     // CRT-like scanlines
+    kScale2x = 5,       // EPX / Scale2x: rounds diagonal edges, stays crisp
+    kScale3x = 6,       // Scale3x (AdvMAME3x): the same at 3x, smoother
     kCount
 };
 
@@ -43,6 +46,8 @@ public:
     // frame. Recreated if the size changes.
     bool CreateHwFramebuffer(unsigned width, unsigned height, bool depth, bool stencil);
     GLuint hw_framebuffer() const { return hw_fbo_; }
+    // Reads the hardware core's last picture (top row first).
+    bool ReadHwFrame(unsigned width, unsigned height, bool bottom_up, std::vector<uint8_t>* rgba);
 
     void set_filter(Filter f) { filter_ = f; }
     void set_integer_scale(bool on) { integer_scale_ = on; }

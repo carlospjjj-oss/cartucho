@@ -21,11 +21,16 @@ class Prefs(context: Context) {
 
     val n3dsResolution: String get() = p.getString("n3ds_resolution", "1")!!
     val n3dsNew3ds: Boolean get() = p.getBoolean("n3ds_new3ds", true)
+    val n3dsTextureFilter: String get() = p.getString("n3ds_tex_filter", "none")!!
+    val n3dsFastShaders: Boolean get() = p.getBoolean("n3ds_fast_shaders", false)
     val n3dsLayout: String get() = p.getString("n3ds_layout", "auto")!!
     val n3dsSwapScreens: Boolean get() = p.getBoolean("n3ds_swap", false)
 
     val ndsLayout: String get() = p.getString("nds_layout", "auto")!!
     fun setNdsLayout(value: String) = p.edit().putString("nds_layout", value).apply()
+
+    val rewind: Boolean get() = p.getBoolean("rewind", true)
+    val quickButtons: Boolean get() = p.getBoolean("quick_buttons", true)
 
     val downloadCovers: Boolean get() = p.getBoolean("download_covers", true)
 

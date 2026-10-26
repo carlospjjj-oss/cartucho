@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 #include "platform.h"
 
@@ -135,6 +136,7 @@ bool Session::OnSurfaceCreated(const std::string& rom, const std::string& save,
         if (!host_->LoadGame(rom, save, error))
             return false;
         loaded_ = true;
+        SetupRewind();
     }
     if (host_->uses_hw_render()) {
         const auto& g = host_->av_info().geometry;
@@ -149,6 +151,43 @@ bool Session::OnSurfaceCreated(const std::string& rom, const std::string& save,
     }
     pacer_.Reset();
     return true;
+}
+
+void Session::SetupRewind() {
+    // A state every couple of frames for small consoles, less often for
+    // bigger ones; none for cores whose states are too big to keep many of
+    // (3DS states are tens of MB).
+    const size_t size = host_->StateSize();
+    rewind_available_ = size > 0 && size <= (24u << 20);
+    // Big states (DS, ~19 MB) are copied less often; the copy itself happens
+    // on this thread, the compression on the rewind worker.
+    rewind_interval_ = size < (1u << 20) ? 2 : 10;
+    char line[96];
+    std::snprintf(line, sizeof(line), "Rewind: state %zu KB, %s", size / 1024,
+                  rewind_available_ ? "on" : "off (state too big)");
+    PlatformLog(1, line);
+}
+
+void Session::RunOneFrame() {
+    host_->RunFrame();
+    if (rewind_available_ && rewind_enabled_ && ++frames_since_capture_ >= rewind_interval_) {
+        frames_since_capture_ = 0;
+        if (host_->SerializeTo(&state_buf_))
+            rewind_.Push(state_buf_);
+    }
+}
+
+bool Session::Screenshot(std::vector<uint8_t>* rgba, int* width, int* height) {
+    const VideoFrame& f = host_->frame();
+    if (f.width == 0 || f.height == 0)
+        return false;
+    *width = static_cast<int>(f.width);
+    *height = static_cast<int>(f.height);
+    if (!f.hw) {
+        *rgba = f.rgba;
+        return !rgba->empty();
+    }
+    return presenter_.ReadHwFrame(f.width, f.height, host_->hw_render().bottom_left_origin, rgba);
 }
 
 void Session::OnSurfaceChanged(int width, int height) {
@@ -182,9 +221,22 @@ void Session::Frame(double now) {
                                            std::max(g.max_height, g.base_height), hw.depth,
                                            hw.stencil);
         }
-        const int frames = pacer_.Step(now, host_->fps(), speed_.load(), audio_fill_);
-        for (int i = 0; i < frames; i++)
-            host_->RunFrame();
+        int frames;
+        if (rewinding_ && rewind_available_) {
+            // One step back per refresh: interval x faster than real time.
+            frames = 0;
+            host_->SetAudioMuted(true);
+            if (rewind_.Pop(&state_buf_) && host_->UnserializeFrom(state_buf_)) {
+                host_->RunFrame();  // draw the restored moment
+                frames_since_capture_ = 0;
+            }
+            pacer_.Reset();
+        } else {
+            host_->SetAudioMuted(speed_ > 1.0);
+            frames = pacer_.Step(now, host_->fps(), speed_.load(), audio_fill_);
+            for (int i = 0; i < frames; i++)
+                RunOneFrame();
+        }
         fps_window_frames_ += frames;
         if (now - fps_window_start_ >= 1.0) {
             measured_fps_ = fps_window_frames_ / (now - fps_window_start_);

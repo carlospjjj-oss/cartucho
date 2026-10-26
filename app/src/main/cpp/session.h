@@ -13,6 +13,7 @@
 
 #include "core_host.h"
 #include "gl_presenter.h"
+#include "rewind.h"
 
 namespace cartucho {
 
@@ -58,6 +59,18 @@ public:
     // Maps a touch at surface pixel (x, y) to the core's pointer.
     void Touch(float x, float y, bool pressed);
 
+    // --- Rewind -------------------------------------------------------------
+    // Whether states are being recorded (off for cores with huge states).
+    bool rewind_available() const { return rewind_available_; }
+    void set_rewind_enabled(bool on) { rewind_enabled_ = on; }
+    // While true, each refresh steps back instead of forward. Any thread.
+    void set_rewinding(bool on) { rewinding_ = on; }
+    // GL thread: after loading a state or resetting, the history is stale.
+    void ClearRewind() { rewind_.Clear(); }
+
+    // GL thread: the picture currently shown, as RGBA rows top to bottom.
+    bool Screenshot(std::vector<uint8_t>* rgba, int* width, int* height);
+
     // --- Network link (patched VBA-M core only) ---------------------------
     bool link_supported() const;
     // GL thread. mode: 0 GBA cable, 1 GBA wireless adapter, 2 Game Boy.
@@ -84,6 +97,16 @@ private:
     int fps_window_frames_ = 0;
     double measured_fps_ = 0.0;
     double last_flush_ = 0.0;
+
+    void SetupRewind();
+    void RunOneFrame();
+    Rewind rewind_;
+    bool rewind_available_ = false;
+    std::atomic<bool> rewind_enabled_{true};
+    std::atomic<bool> rewinding_{false};
+    int rewind_interval_ = 2;
+    int frames_since_capture_ = 0;
+    std::vector<uint8_t> state_buf_;
 
     void LinkStep();
     using LinkStartFn = int (*)(int, int, int, const char*, int, int);

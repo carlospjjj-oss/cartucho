@@ -34,13 +34,68 @@ uniform int u_mode;
 uniform vec2 u_src_size;   // picture size in texels
 uniform vec2 u_out_size;   // picture size on screen in pixels
 uniform vec2 u_uv_scale;
+uniform float u_flip;
 out vec4 o_color;
 
 vec2 to_texel(vec2 uv) { return uv / u_uv_scale * u_src_size; }
 vec2 to_uv(vec2 texel) { return texel / u_src_size * u_uv_scale; }
 
+// Colour of the source pixel at `cell` + offset (in screen directions: +y is
+// down on screen whatever the texture's row order).
+vec3 px(vec2 cell, vec2 d) {
+    if (u_flip > 0.5) d.y = -d.y;
+    vec2 c = clamp(cell + d, vec2(0.0), u_src_size - 1.0);
+    return texture(u_tex, to_uv(c + 0.5)).rgb;
+}
+bool eq(vec3 a, vec3 b) { return all(lessThan(abs(a - b), vec3(0.02))); }
+
+// Scale2x (EPX): each source pixel becomes 2x2; a corner takes a neighbour's
+// colour where two neighbours meet along a diagonal edge.
+vec3 scale2x(vec2 cell, vec2 sub) {
+    vec3 B = px(cell, vec2(0, -1)), D = px(cell, vec2(-1, 0)), E = px(cell, vec2(0, 0));
+    vec3 F = px(cell, vec2(1, 0)), H = px(cell, vec2(0, 1));
+    if (eq(B, H) || eq(D, F)) return E;
+    if (sub.y < 1.0) {
+        if (sub.x < 1.0) return eq(D, B) ? D : E;
+        return eq(B, F) ? F : E;
+    }
+    if (sub.x < 1.0) return eq(D, H) ? D : E;
+    return eq(H, F) ? F : E;
+}
+
+// Scale3x (AdvMAME3x): 3x3 per source pixel, also filling edge midpoints.
+vec3 scale3x(vec2 cell, vec2 sub) {
+    vec3 A = px(cell, vec2(-1, -1)), B = px(cell, vec2(0, -1)), C = px(cell, vec2(1, -1));
+    vec3 D = px(cell, vec2(-1, 0)), E = px(cell, vec2(0, 0)), F = px(cell, vec2(1, 0));
+    vec3 G = px(cell, vec2(-1, 1)), H = px(cell, vec2(0, 1)), I = px(cell, vec2(1, 1));
+    if (eq(B, H) || eq(D, F)) return E;
+    bool db = eq(D, B), bf = eq(B, F), dh = eq(D, H), hf = eq(H, F);
+    int i = int(sub.y) * 3 + int(sub.x);
+    if (i == 0) return db ? D : E;
+    if (i == 1) return ((db && !eq(E, C)) || (bf && !eq(E, A))) ? B : E;
+    if (i == 2) return bf ? F : E;
+    if (i == 3) return ((db && !eq(E, G)) || (dh && !eq(E, A))) ? D : E;
+    if (i == 5) return ((bf && !eq(E, I)) || (hf && !eq(E, C))) ? F : E;
+    if (i == 6) return dh ? D : E;
+    if (i == 7) return ((dh && !eq(E, I)) || (hf && !eq(E, G))) ? H : E;
+    if (i == 8) return hf ? F : E;
+    return E;
+}
+
 void main() {
     vec2 texel = to_texel(v_uv);
+    if (u_mode == 5 || u_mode == 6) {
+        // Screen-down cell coordinates even for bottom-up (hardware) frames.
+        vec2 t = texel;
+        if (u_flip > 0.5) t.y = u_src_size.y - t.y;
+        vec2 cell = floor(t);
+        float n = u_mode == 5 ? 2.0 : 3.0;
+        vec2 sub = floor(fract(t) * n);
+        if (u_flip > 0.5) cell.y = u_src_size.y - 1.0 - cell.y;
+        vec3 c = u_mode == 5 ? scale2x(cell, sub) : scale3x(cell, sub);
+        o_color = vec4(c, 1.0);
+        return;
+    }
     if (u_mode == 2) {
         // Sharp bilinear: nearest inside each source pixel, a one-screen-
         // pixel blend at its edges. Crisp at any scale, no shimmering.
@@ -125,7 +180,7 @@ bool GlPresenter::Init() {
     u_src_size_ = glGetUniformLocation(program_, "u_src_size");
     u_out_size_ = glGetUniformLocation(program_, "u_out_size");
     u_uv_scale_ = glGetUniformLocation(program_, "u_uv_scale");
-    u_flip_ = glGetUniformLocation(program_, "u_flip");
+    u_flip_ = glGetUniformLocation(program_, "u_flip");  // vertex and fragment
     glUseProgram(program_);
     glUniform1i(glGetUniformLocation(program_, "u_tex"), 0);
 
@@ -195,6 +250,32 @@ bool GlPresenter::CreateHwFramebuffer(unsigned width, unsigned height, bool dept
         return false;
     }
     return true;
+}
+
+bool GlPresenter::ReadHwFrame(unsigned width, unsigned height, bool bottom_up,
+                              std::vector<uint8_t>* rgba) {
+    if (!hw_fbo_ || width == 0 || height == 0 || width > hw_w_ || height > hw_h_)
+        return false;
+    rgba->resize(static_cast<size_t>(width) * height * 4);
+    glBindFramebuffer(GL_FRAMEBUFFER, hw_fbo_);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, rgba->data());
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if (bottom_up) {
+        // GL rows start at the bottom; images start at the top.
+        const size_t row = static_cast<size_t>(width) * 4;
+        std::vector<uint8_t> tmp(row);
+        for (unsigned y = 0; y < height / 2; y++) {
+            uint8_t* a = rgba->data() + y * row;
+            uint8_t* b = rgba->data() + (height - 1 - y) * row;
+            std::copy(a, a + row, tmp.data());
+            std::copy(b, b + row, a);
+            std::copy(tmp.data(), tmp.data() + row, b);
+        }
+    }
+    return glGetError() == GL_NO_ERROR;
 }
 
 void GlPresenter::UploadSoftware(const VideoFrame& frame) {

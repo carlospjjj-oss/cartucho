@@ -54,6 +54,18 @@ object NativeBridge {
     /** What the frontend and the core logged recently. */
     external fun recentLog(): String
 
+    // Rewind, cheats, screenshots.
+    external fun rewindAvailable(): Boolean
+    external fun setRewindEnabled(on: Boolean)
+    /** Hold to go back in time (any thread). */
+    external fun setRewinding(on: Boolean)
+    /** GL thread. */
+    external fun cheatReset()
+    /** GL thread. */
+    external fun cheatSet(index: Int, enabled: Boolean, code: String)
+    /** GL thread. [width, height, ARGB pixels...] or null. */
+    external fun screenshot(): IntArray?
+
     // Network link (GBA / GB). linkStart and linkStop: GL thread.
     external fun linkSupported(): Boolean
     /** mode: 0 GBA cable, 1 GBA wireless adapter, 2 Game Boy cable. */

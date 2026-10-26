@@ -36,9 +36,17 @@ saves.
   (layout salvo por console e por orientação).
 - Controles Bluetooth/USB e teclado; os botões na tela somem quando você usa
   um controle físico.
-- 6 slots de save state por jogo, saves de bateria automáticos.
+- 6 slots de save state por jogo, mais salvar/carregar rápido na tela; saves
+  de bateria automáticos.
+- Voltar no tempo (segure «) no GB, GBA e DS.
+- Trapaças (GameShark, Action Replay, CodeBreaker) por jogo.
+- Captura de tela para a galeria (Imagens/Cartucho).
 - Acelerar (2x a 6x).
-- Filtros de imagem: nítido, suave, nítido suave, tela LCD e linhas de TV.
+- Filtros de imagem: nítido, suave, nítido suave, tela LCD, linhas de TV e
+  bordas arredondadas Scale2x/Scale3x; no 3DS, filtros de textura do Azahar
+  (xBRZ, ScaleForce, MMPX, Anime4K) e cache de shaders.
+- Backup dos saves num .zip (inclusive direto no Google Drive) e restauração.
+- Relatório de erro pronto para copiar ou compartilhar.
 - 3DS: duas telas com toque na tela de baixo, analógico, ZL/ZR, layouts
   (empilhado, lado a lado, tela grande + pequena, uma tela), trocar telas,
   resolução interna até 4x, New 3DS.

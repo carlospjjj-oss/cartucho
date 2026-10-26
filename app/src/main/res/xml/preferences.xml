@@ -47,6 +47,19 @@
             app:defaultValue="true" />
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="Jogo">
+        <SwitchPreferenceCompat
+            app:key="rewind"
+            app:title="Voltar no tempo"
+            app:summary="Segure « para desfazer os últimos segundos (GB, GBA e DS)"
+            app:defaultValue="true" />
+        <SwitchPreferenceCompat
+            app:key="quick_buttons"
+            app:title="Botões rápidos na tela"
+            app:summary="« voltar no tempo, S salvar rápido, L carregar rápido"
+            app:defaultValue="true" />
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="Acelerar">
         <ListPreference
             app:key="ff_speed"
@@ -82,11 +95,38 @@
             app:entryValues="@array/layout_values"
             app:defaultValue="auto"
             app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:key="n3ds_tex_filter"
+            app:title="Filtro de texturas"
+            app:summary="%s — suaviza as texturas dos jogos 3D; xBRZ e ScaleForce pesam mais"
+            app:entries="@array/tex_filter_names"
+            app:entryValues="@array/tex_filter_values"
+            app:defaultValue="none" />
+        <SwitchPreferenceCompat
+            app:key="n3ds_fast_shaders"
+            app:title="Shaders rápidos"
+            app:summary="Mais velocidade em celulares fracos; raramente causa pequenos erros gráficos"
+            app:defaultValue="false" />
         <SwitchPreferenceCompat
             app:key="n3ds_new3ds"
             app:title="Emular New 3DS"
             app:summary="Mais memória e CPU; alguns jogos precisam"
             app:defaultValue="true" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="Backup dos saves">
+        <Preference
+            app:key="backup_export"
+            app:title="Fazer backup"
+            app:summary="Saves, estados, trapaças, capas escolhidas e BIOS num arquivo .zip (pode salvar direto no Google Drive)" />
+        <Preference
+            app:key="backup_restore"
+            app:title="Restaurar backup"
+            app:summary="Traz de volta os saves de um backup (substitui os atuais com o mesmo nome)" />
+        <Preference
+            app:key="error_report"
+            app:title="Relatório de erro"
+            app:summary="Informações para enviar quando algo der errado" />
     </PreferenceCategory>
 
     <PreferenceCategory

@@ -6,9 +6,22 @@
         <item>@string/filter_sharp_smooth</item>
         <item>@string/filter_lcd</item>
         <item>@string/filter_scanlines</item>
+        <item>Bordas arredondadas 2x (Scale2x)</item>
+        <item>Bordas arredondadas 3x (Scale3x)</item>
     </string-array>
     <string-array name="filter_values">
-        <item>0</item><item>1</item><item>2</item><item>3</item><item>4</item>
+        <item>0</item><item>1</item><item>2</item><item>3</item><item>4</item><item>5</item><item>6</item>
+    </string-array>
+    <string-array name="tex_filter_names">
+        <item>Nenhum (original)</item>
+        <item>xBRZ</item>
+        <item>ScaleForce</item>
+        <item>MMPX</item>
+        <item>Anime4K</item>
+        <item>Bicúbico</item>
+    </string-array>
+    <string-array name="tex_filter_values">
+        <item>none</item><item>xBRZ</item><item>ScaleForce</item><item>MMPX</item><item>Anime4K</item><item>Bicubic</item>
     </string-array>
     <string-array name="ff_names">
         <item>2x</item><item>3x</item><item>4x</item><item>6x</item>
