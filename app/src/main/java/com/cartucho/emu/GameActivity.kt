@@ -62,6 +62,7 @@ class GameActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ErrorReport.install(this)
         prefs = Prefs(this)
         game = Game(
             intent.getStringExtra(EXTRA_URI)!!,
@@ -94,6 +95,7 @@ class GameActivity : AppCompatActivity() {
             fail(error)
             return
         }
+        ErrorReport.gameStarting(this, game)
         linkUi = LinkUi(this, glView, game, romCrc, modal)
         // The surface view joins the layout only now: GLSurfaceView crashes
         // if its surface appears before it has a renderer.
@@ -372,6 +374,7 @@ class GameActivity : AppCompatActivity() {
         if (isFinishing) {
             // Everything native was closed by quit(); end the game process
             // so the next game starts from a clean slate.
+            ErrorReport.gameEnded(this)
             Process.killProcess(Process.myPid())
         }
     }
@@ -392,6 +395,7 @@ class GameActivity : AppCompatActivity() {
     }
 
     private fun fail(message: String) {
+        ErrorReport.gameError(this, message)
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.error_title)
             .setMessage(message)

@@ -5,9 +5,16 @@
 // Calls marked "GL thread" come from the GLSurfaceView renderer; the others
 // are safe from the UI thread.
 #include <EGL/egl.h>
+#include <GLES3/gl3.h>
 #include <android/log.h>
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <jni.h>
+#include <signal.h>
+#include <unistd.h>
+
+#include <cstring>
+#include <deque>
 
 #include <chrono>
 #include <memory>
@@ -20,11 +27,103 @@
 
 namespace cartucho {
 
+// --- Log kept in memory for error reports -----------------------------------
+//
+// The last lines the frontend and the cores logged, so a report can show what
+// happened right before a problem. A fixed array of fixed-size lines, so the
+// crash handler can write it out without allocating.
+
+constexpr int kLogLines = 300;
+constexpr int kLogLineSize = 200;
+char g_log[kLogLines][kLogLineSize];
+int g_log_next = 0;  // slot for the next line
+int g_log_count = 0;
+std::mutex g_log_mutex;
+int g_crash_fd = -1;
+
 void PlatformLog(int level, const char* text) {
     static const int prio[] = {ANDROID_LOG_DEBUG, ANDROID_LOG_INFO, ANDROID_LOG_WARN,
                                ANDROID_LOG_ERROR};
     __android_log_write(prio[level & 3], "Cartucho", text);
+    static const char tags[] = "DIWE";
+    std::lock_guard<std::mutex> lock(g_log_mutex);
+    char* slot = g_log[g_log_next];
+    std::snprintf(slot, kLogLineSize, "%c %s", tags[level & 3], text);
+    g_log_next = (g_log_next + 1) % kLogLines;
+    if (g_log_count < kLogLines)
+        g_log_count++;
 }
+
+std::string RecentLog() {
+    std::lock_guard<std::mutex> lock(g_log_mutex);
+    std::string out;
+    const int start = (g_log_next - g_log_count + kLogLines) % kLogLines;
+    for (int i = 0; i < g_log_count; i++) {
+        out += g_log[(start + i) % kLogLines];
+        out += '\n';
+    }
+    return out;
+}
+
+namespace {
+
+void WriteAll(int fd, const char* s) {
+    size_t len = std::strlen(s);
+    while (len > 0) {
+        const ssize_t n = write(fd, s, len);
+        if (n <= 0)
+            return;
+        s += n;
+        len -= static_cast<size_t>(n);
+    }
+}
+
+// Crash: dump the log to the file opened in advance, then let the default
+// handler finish the process (and Android its own tombstone). Only
+// async-signal-safe calls; the log is read without its lock, best effort.
+struct sigaction g_old_actions[32];
+
+void CrashHandler(int sig, siginfo_t* info, void* context) {
+    if (g_crash_fd >= 0) {
+        char head[160];
+        std::snprintf(head, sizeof(head), "NATIVE CRASH: signal %d (%s) at address %p\n", sig,
+                      sig == SIGSEGV   ? "SIGSEGV"
+                      : sig == SIGABRT ? "SIGABRT"
+                      : sig == SIGBUS  ? "SIGBUS"
+                      : sig == SIGILL  ? "SIGILL"
+                      : sig == SIGFPE  ? "SIGFPE"
+                                       : "?",
+                      info ? info->si_addr : nullptr);
+        WriteAll(g_crash_fd, head);
+        WriteAll(g_crash_fd, "--- last log lines ---\n");
+        const int start = (g_log_next - g_log_count + kLogLines) % kLogLines;
+        for (int i = 0; i < g_log_count; i++) {
+            WriteAll(g_crash_fd, g_log[(start + i) % kLogLines]);
+            WriteAll(g_crash_fd, "\n");
+        }
+        fsync(g_crash_fd);
+        close(g_crash_fd);
+        g_crash_fd = -1;
+    }
+    // Restore and re-raise.
+    sigaction(sig, &g_old_actions[sig], nullptr);
+    raise(sig);
+}
+
+void InstallCrashHandler() {
+    static bool installed = false;
+    if (installed)
+        return;
+    installed = true;
+    struct sigaction sa {};
+    sa.sa_sigaction = CrashHandler;
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    sigemptyset(&sa.sa_mask);
+    for (int sig : {SIGSEGV, SIGABRT, SIGBUS, SIGILL, SIGFPE})
+        sigaction(sig, &sa, &g_old_actions[sig]);
+}
+
+}  // namespace
 
 retro_proc_address_t PlatformGetProcAddress(const char* sym) {
     if (auto p = reinterpret_cast<retro_proc_address_t>(eglGetProcAddress(sym)))
@@ -311,4 +410,19 @@ JNI_FN(jstring, linkMessage)(JNIEnv* env, jobject) {
         return nullptr;
     const std::string m = g_session->link_message();
     return m.empty() ? nullptr : ToJava(env, m);
+}
+
+// --- Error reports ------------------------------------------------------------
+
+// Where a native crash writes the recent log; opened now, since a crashing
+// process can no longer open files safely. Delete it after a clean exit.
+JNI_FN(void, setCrashFile)(JNIEnv* env, jobject, jstring path) {
+    if (cartucho::g_crash_fd >= 0)
+        close(cartucho::g_crash_fd);
+    cartucho::g_crash_fd = open(ToStd(env, path).c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    cartucho::InstallCrashHandler();
+}
+
+JNI_FN(jstring, recentLog)(JNIEnv* env, jobject) {
+    return ToJava(env, cartucho::RecentLog());
 }

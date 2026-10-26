@@ -59,6 +59,7 @@ class LibraryActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ErrorReport.install(this)
         setContentView(R.layout.activity_library)
         store = LibraryStore(this)
         covers = Covers(this)
@@ -71,6 +72,7 @@ class LibraryActivity : AppCompatActivity() {
                 R.id.action_open_file -> pickFile.launch(arrayOf("*/*"))
                 R.id.action_folders -> showFolders()
                 R.id.action_rescan -> rescan()
+                R.id.action_report -> ErrorReport.show(this)
                 R.id.action_refresh_covers -> {
                     io.execute {
                         covers.refresh()
@@ -112,6 +114,12 @@ class LibraryActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Coming back from a game that closed by itself: offer the report.
+        if (ErrorReport.hasNew(this)) {
+            Snackbar.make(grid, "O último jogo teve um problema.", Snackbar.LENGTH_LONG)
+                .setAction("Ver relatório") { ErrorReport.show(this) }
+                .show()
+        }
         // "Recentes" order changes after playing.
         if (filter == FILTER_RECENT) applyFilter()
     }

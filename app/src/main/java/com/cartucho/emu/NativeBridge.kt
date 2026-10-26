@@ -49,6 +49,11 @@ object NativeBridge {
     external fun shutdownRequested(): Boolean
     external fun usesHardwareRender(): Boolean
 
+    /** Native crashes dump the recent log into this file (opened now). */
+    external fun setCrashFile(path: String)
+    /** What the frontend and the core logged recently. */
+    external fun recentLog(): String
+
     // Network link (GBA / GB). linkStart and linkStop: GL thread.
     external fun linkSupported(): Boolean
     /** mode: 0 GBA cable, 1 GBA wireless adapter, 2 Game Boy cable. */

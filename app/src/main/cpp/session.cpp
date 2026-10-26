@@ -119,6 +119,14 @@ void Session::LinkStep() {
 
 bool Session::OnSurfaceCreated(const std::string& rom, const std::string& save,
                                std::string* error) {
+    // For error reports: which GPU and driver the game runs on.
+    {
+        const char* renderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+        const char* version = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+        std::string line = std::string("GPU: ") + (renderer ? renderer : "?") + " / " +
+                           (version ? version : "?");
+        PlatformLog(1, line.c_str());
+    }
     if (!presenter_.Init()) {
         *error = "Could not set up the display";
         return false;

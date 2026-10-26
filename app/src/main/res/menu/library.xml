@@ -13,6 +13,8 @@
         app:showAsAction="never" />
     <item android:id="@+id/action_refresh_covers" android:title="Atualizar capas"
         app:showAsAction="never" />
+    <item android:id="@+id/action_report" android:title="Relatório de erro"
+        app:showAsAction="never" />
     <item android:id="@+id/action_rescan" android:title="@string/rescan"
         app:showAsAction="never" />
 </menu>
