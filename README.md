@@ -12,8 +12,10 @@ módulos (cores no formato libretro):
 | Game Boy Advance, Game Boy, Game Boy Color | [VisualBoyAdvance-M](https://github.com/visualboyadvance-m/visualboyadvance-m) | GPL-2.0 |
 | Nintendo 3DS | [Azahar](https://github.com/azahar-emu/azahar) | GPL-2.0+ |
 
-Os dois são compilados direto do código oficial pelo GitHub Actions, na versão
-fixada em `.github/workflows/build.yml` (`VBAM_SHA`, `AZAHAR_SHA`).
+Os dois são compilados direto do código oficial pelo workflow **Build cores**
+(`.github/workflows/cores.yml`, versões em `VBAM_SHA` e `AZAHAR_SHA`), que
+publica o resultado na release `cores`. O workflow **Build APK** roda a cada
+envio e monta o app em poucos minutos usando esses cores.
 
 ## Baixar o APK
 
@@ -41,6 +43,8 @@ saves.
 ## Ainda não tem
 
 - Link cable entre aparelhos na rede (próxima etapa).
+- BIOS: nenhuma vem no app (são da Nintendo). Nenhuma é obrigatória; em
+  Configurações → BIOS dá para importar as do seu próprio console.
 - Instalar arquivos `.cia` no 3DS (use `.3ds`/`.cci`/`.cxi` descriptografados).
 
 ## Jogos e arquivos de sistema

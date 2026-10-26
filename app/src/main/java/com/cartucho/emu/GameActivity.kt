@@ -143,9 +143,9 @@ class GameActivity : AppCompatActivity() {
             addView(LinearLayout(context).apply {
                 gravity = Gravity.CENTER
                 setPadding(0, dp(8), 0, 0)
-                addView(button("−") { overlay.scaleSelected(1f / 1.1f) }.apply { tag = "size" })
-                addView(button("+") { overlay.scaleSelected(1.1f) })
-                addView(button(getString(R.string.reset_layout)) { overlay.resetLayout() })
+                addView(button("−") { this@GameActivity.overlay.scaleSelected(1f / 1.1f) }.apply { tag = "size" })
+                addView(button("+") { this@GameActivity.overlay.scaleSelected(1.1f) })
+                addView(button(getString(R.string.reset_layout)) { this@GameActivity.overlay.resetLayout() })
                 addView(button(getString(R.string.done)) { finishEditing() })
             })
         }
@@ -202,7 +202,11 @@ class GameActivity : AppCompatActivity() {
     private val landscape get() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     private fun applyCoreOptions() {
-        if (game.system != GameSystem.N3DS) return
+        if (game.system != GameSystem.N3DS) {
+            // Real BIOS when the player imported one, built-in otherwise.
+            NativeBridge.setOption("vbam_usebios", if (Bios.anyFor(this, game.system)) "enabled" else "disabled")
+            return
+        }
         NativeBridge.setOption("citra_graphics_api", "OpenGL")
         NativeBridge.setOption("citra_use_cpu_jit", "enabled")
         NativeBridge.setOption("citra_enable_touch_touchscreen", "enabled")

@@ -1,0 +1,124 @@
+# Builds the two emulator cores from their upstream sources with the Android
+# NDK and publishes them as the "cores" release, which the APK build
+# downloads. Run it by hand (Actions > Build cores > Run workflow) after
+# bumping an emulator version below. Cached by upstream commit, so a rerun
+# without a version change takes seconds.
+name: Build cores
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  NDK_VERSION: "29.0.14206865"
+  # Upstream commits the cores are built from. Bump to update an emulator.
+  VBAM_REPO: visualboyadvance-m/visualboyadvance-m
+  VBAM_SHA: 07fb482d07b919b48fd63f8ac66546605ebf5afd
+  AZAHAR_REPO: azahar-emu/azahar
+  AZAHAR_SHA: 1edf59ef592a854ccc2a7405d9aade477b2a0b3d
+
+jobs:
+  core-gba:
+    name: Core GBA (VBA-M)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: out/libvbam_libretro.so
+          key: vbam-android-arm64-${{ env.VBAM_SHA }}-v1
+      - name: Install NDK
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: echo "y" | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" > /dev/null
+      - name: Fetch VBA-M
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git init -q vbam && cd vbam
+          git remote add origin "https://github.com/$VBAM_REPO.git"
+          git fetch -q --depth 1 origin "$VBAM_SHA" && git checkout -q FETCH_HEAD
+      - name: Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          NDK="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          L=.github/scripts/logged.sh
+          $L "vbam configure" cmake -S vbam -B build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28 -DANDROID_STL=c++_static \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_LIBRETRO=ON -DENABLE_QT=OFF -DENABLE_WX=OFF -DENABLE_SDL=OFF \
+            -DBUILD_TESTING=OFF -DENABLE_VULKAN=OFF -DENABLE_LUA=OFF -DENABLE_FFMPEG=OFF \
+            -DENABLE_LINK=OFF -DENABLE_NLS=OFF
+          $L "vbam build" cmake --build build --target vbam_libretro -j "$(nproc)"
+          mkdir -p out
+          cp "$(find build -name 'vbam_libretro*.so' | head -1)" out/libvbam_libretro.so
+          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" -s out/libvbam_libretro.so
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-gba
+          path: out/libvbam_libretro.so
+
+  core-3ds:
+    name: Core 3DS (Azahar)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: out/libazahar_libretro.so
+          key: azahar-android-arm64-${{ env.AZAHAR_SHA }}-v1
+      - name: Install NDK and CMake
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          echo "y" | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" "cmake;3.30.3" > /dev/null
+      - name: Fetch Azahar
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git init -q azahar && cd azahar
+          git remote add origin "https://github.com/$AZAHAR_REPO.git"
+          git fetch -q --depth 1 origin "$AZAHAR_SHA" && git checkout -q FETCH_HEAD
+          git submodule update --init --recursive --depth 1 -j 8
+      - name: Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          NDK="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          CMAKE="$ANDROID_SDK_ROOT/cmake/3.30.3/bin/cmake"
+          L=$PWD/.github/scripts/logged.sh
+          cd azahar
+          $L "azahar configure" "$CMAKE" -DENABLE_LIBRETRO=ON -DANDROID_PLATFORM=android-28 \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_STL=c++_static -DANDROID_ABI=arm64-v8a -DCMAKE_BUILD_TYPE=Release \
+            . -B build
+          $L "azahar build" "$CMAKE" --build build --target azahar_libretro --config Release -j "$(nproc)"
+          mkdir -p ../out
+          cp "$(find build -name 'azahar_libretro*.so' | head -1)" ../out/libazahar_libretro.so
+          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" -s ../out/libazahar_libretro.so
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-3ds
+          path: out/libazahar_libretro.so
+
+  publish:
+    name: Publish cores
+    needs: [core-gba, core-3ds]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: core-*
+          path: cores
+          merge-multiple: true
+      - name: Upload to the "cores" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ls -la cores
+          printf 'VBA-M %s\nAzahar %s\n' "$VBAM_SHA" "$AZAHAR_SHA" > cores/VERSIONS.txt
+          gh release view cores > /dev/null 2>&1 || \
+            gh release create cores --title "Emulator cores" --prerelease \
+              --notes "Cores usados pelo APK. Gerados pelo workflow Build cores."
+          gh release upload cores cores/* --clobber

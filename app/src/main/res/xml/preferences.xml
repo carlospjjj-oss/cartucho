@@ -79,6 +79,18 @@
             app:defaultValue="true" />
     </PreferenceCategory>
 
+    <PreferenceCategory
+        app:key="bios"
+        app:title="BIOS (opcional)">
+        <Preference
+            app:key="bios_info"
+            app:selectable="false"
+            app:summary="Nenhuma BIOS é obrigatória: o Cartucho já tem substitutas embutidas. Se você extraiu a BIOS do seu próprio console, importe aqui para ver a abertura original e ter mais compatibilidade em poucos jogos." />
+        <Preference app:key="bios_gba" app:title="BIOS do Game Boy Advance" />
+        <Preference app:key="bios_gb" app:title="BIOS do Game Boy" />
+        <Preference app:key="bios_gbc" app:title="BIOS do Game Boy Color" />
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="Biblioteca">
         <SwitchPreferenceCompat
             app:key="download_covers"
