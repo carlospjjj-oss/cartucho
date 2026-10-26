@@ -15,6 +15,7 @@ enum class GameSystem(
 ) {
     GBA("GBA", "Game Boy Advance", setOf("gba", "agb"), "libvbam_libretro.so", R.color.gba, 1.5f),
     GB("GB", "Game Boy / Color", setOf("gb", "gbc", "sgb", "dmg", "cgb"), "libvbam_libretro.so", R.color.gb, 1.11f),
+    NDS("DS", "Nintendo DS", setOf("nds", "dsi", "ids", "srl"), "libmelondsds_libretro.so", R.color.nds, 0.75f),
     N3DS("3DS", "Nintendo 3DS", setOf("3ds", "cci", "cxi", "3dsx", "app", "elf", "axf"), "libazahar_libretro.so", R.color.n3ds, 1.2f);
 
     companion object {

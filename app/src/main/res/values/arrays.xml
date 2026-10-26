@@ -35,4 +35,16 @@
     <string-array name="layout_values">
         <item>auto</item><item>default</item><item>side_by_side</item><item>large_screen</item><item>single_screen</item>
     </string-array>
+    <string-array name="nds_layout_names">
+        <item>@string/layout_auto</item>
+        <item>Uma em cima da outra</item>
+        <item>Lado a lado</item>
+        <item>Tela de cima grande + de baixo pequena</item>
+        <item>Tela de baixo grande + de cima pequena</item>
+        <item>Só a tela de cima</item>
+        <item>Só a tela de baixo</item>
+    </string-array>
+    <string-array name="nds_layout_values">
+        <item>auto</item><item>top-bottom</item><item>left-right</item><item>hybrid-top</item><item>hybrid-bottom</item><item>top</item><item>bottom</item>
+    </string-array>
 </resources>

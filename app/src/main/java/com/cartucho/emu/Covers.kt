@@ -86,6 +86,7 @@ class Covers(context: Context) {
         GameSystem.GB -> if (game.fileName.endsWith(".gbc", true))
             listOf("Nintendo - Game Boy Color", "Nintendo - Game Boy")
         else listOf("Nintendo - Game Boy", "Nintendo - Game Boy Color")
+        GameSystem.NDS -> listOf("Nintendo - Nintendo DS")
         GameSystem.N3DS -> listOf("Nintendo - Nintendo 3DS")
     }
 

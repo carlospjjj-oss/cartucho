@@ -85,6 +85,11 @@ public:
     // `save_path` is where battery saves (SRAM) live for this game, e.g.
     // ".../saves/Game.srm". Cores that manage their own saves ignore it.
     bool LoadGame(const std::string& rom_path, const std::string& save_path, std::string* error);
+    // An already open file holding the game (Android hands out descriptors,
+    // not paths). Used instead of opening rom_path when the core takes the
+    // game from memory; rom_path then only names it (cores look at the
+    // extension). Not closed here.
+    void SetRomFd(int fd) { rom_fd_ = fd; }
     void UnloadGame();
 
     bool game_loaded() const { return game_loaded_; }
@@ -162,6 +167,7 @@ private:
     std::string save_path_;
     std::vector<uint8_t> rom_data_;  // kept alive for cores without need_fullpath
     std::string rom_path_;
+    int rom_fd_ = -1;
 
     retro_system_info system_info_{};
     retro_system_av_info av_info_{};

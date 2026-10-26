@@ -12,7 +12,8 @@ object NativeBridge {
 
     /** Loads a core library. Returns null on success, else the error. */
     external fun open(corePath: String, systemDir: String, saveDir: String): String?
-    external fun setGame(romPath: String, savePath: String)
+    /** fd: an open descriptor holding the game (-1 to open romPath instead). */
+    external fun setGame(romPath: String, savePath: String, fd: Int)
     external fun setOption(key: String, value: String)
     /** Alternating key, "Description; a|b|c", current value. */
     external fun options(): Array<String>

@@ -30,6 +30,7 @@ if ! EGL_PLATFORM=surfaceless "$OUT/gl_test" "$OUT/fake_hw_core.so"; then
 fi
 if [ $# -ge 2 ]; then
     "$OUT/host_test" "$1" "$2" "$OUT/frame.ppm" 400 2>/dev/null
+    CARTUCHO_TEST_FD=1 "$OUT/host_test" "$1" "$2" "$OUT/frame-fd.ppm" 60 2>/dev/null | grep -E "load game|FAIL|passed"
     # Network link between two processes, when the core has the extension.
     if nm -D "$1" 2>/dev/null | grep -c cartucho_link_start > /dev/null; then
         "$OUT/link_test" "$1" "$2" server 5791 2>/dev/null &

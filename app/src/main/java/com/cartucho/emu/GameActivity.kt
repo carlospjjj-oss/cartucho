@@ -48,6 +48,8 @@ class GameActivity : AppCompatActivity() {
     private lateinit var stateDir: File
 
     private var romCrc = 0L
+    // Kept open for the whole game: the core reads the ROM through it.
+    private var romFile: android.os.ParcelFileDescriptor? = null
     private lateinit var linkUi: LinkUi
     @Volatile private var loaded = false
     @Volatile private var resumed = false
@@ -159,26 +161,43 @@ class GameActivity : AppCompatActivity() {
 
     /** Opens the ROM, loads the core and passes everything native needs. */
     private fun prepare(): String? {
+        var romFd = -1
         val romPath = if (game.system == GameSystem.N3DS) {
+            // The 3DS core opens the game itself, by path, and games are
+            // gigabytes: open it where it is (needs all-files access).
             Storage.directPath(this, game)
                 ?: return "Não foi possível abrir ${game.fileName} direto da pasta. " +
                     "Libere \"Acesso a todos os arquivos\" para o Cartucho e deixe o jogo na " +
                     "memória interna ou no cartão SD."
         } else {
-            // Small: copy to the cache, named like the game (the core looks at
-            // the extension).
-            val romDir = File(cacheDir, "rom").apply { deleteRecursively(); mkdirs() }
-            val copy = File(romDir, game.fileName.replace('/', '_'))
-            try {
-                contentResolver.openInputStream(Uri.parse(game.uri))?.use { input ->
-                    copy.outputStream().use { input.copyTo(it) }
-                } ?: return "Não foi possível abrir ${game.fileName}."
+            // The GB/GBA and DS cores take the game from memory: read it
+            // straight from the picked file. The path only carries the name
+            // (the cores look at the extension); it does not need to exist.
+            val pfd = try {
+                contentResolver.openFileDescriptor(Uri.parse(game.uri), "r")
             } catch (e: Exception) {
-                return "Não foi possível abrir ${game.fileName}. A pasta ainda existe?"
+                null
+            } ?: return "Não foi possível abrir ${game.fileName}. A pasta ainda existe?"
+            romFile = pfd
+            romFd = pfd.fd
+            if (game.system != GameSystem.NDS && game.size in 1..64L * 1024 * 1024) {
+                // Shown to link partners so they can tell it is the same game.
+                romCrc = try {
+                    contentResolver.openInputStream(Uri.parse(game.uri))?.use { input ->
+                        val crc = java.util.zip.CRC32()
+                        val buf = ByteArray(1 shl 16)
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            crc.update(buf, 0, n)
+                        }
+                        crc.value
+                    } ?: 0L
+                } catch (e: Exception) {
+                    0L
+                }
             }
-            // Shown to link partners so they can tell it is the same game.
-            romCrc = java.util.zip.CRC32().apply { update(copy.readBytes()) }.value
-            copy.path
+            File(cacheDir, "rom/" + game.fileName.replace('/', '_')).path
         }
 
         val systemDir = File(filesDir, "system").apply { mkdirs() }
@@ -189,13 +208,28 @@ class GameActivity : AppCompatActivity() {
 
         NativeBridge.open(core.path, systemDir.path, saveDir.path)?.let { return it }
         applyCoreOptions()
-        NativeBridge.setGame(romPath, File(saveDir, game.saveName + ".srm").path)
+        NativeBridge.setGame(romPath, File(saveDir, game.saveName + ".srm").path, romFd)
         return null
     }
 
     private val landscape get() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     private fun applyCoreOptions() {
+        if (game.system == GameSystem.NDS) {
+            NativeBridge.setOption("melonds_render_mode", "software")
+            NativeBridge.setOption("melonds_jit_enable", "enabled")
+            NativeBridge.setOption("melonds_sysfile_mode", "builtin")
+            NativeBridge.setOption("melonds_console_mode", "ds")
+            NativeBridge.setOption("melonds_touch_mode", "touch")
+            NativeBridge.setOption("melonds_show_cursor", "disabled")
+            NativeBridge.setOption("melonds_show_bios_warnings", "disabled")
+            NativeBridge.setOption("melonds_number_of_screen_layouts", "1")
+            val layout = prefs.ndsLayout.let {
+                if (it == "auto") (if (landscape) "hybrid-top" else "top-bottom") else it
+            }
+            NativeBridge.setOption("melonds_screen_layout1", layout)
+            return
+        }
         if (game.system != GameSystem.N3DS) {
             // Real BIOS when the player imported one, built-in otherwise.
             NativeBridge.setOption("vbam_usebios", if (Bios.anyFor(this, game.system)) "enabled" else "disabled")
@@ -217,7 +251,10 @@ class GameActivity : AppCompatActivity() {
 
     private fun applyDisplay() {
         val portrait = !landscape
-        val reserve = if (portrait) (if (game.system == GameSystem.N3DS) 0.3f else 0.38f) else 0f
+        val reserve = if (!portrait) 0f else when (game.system) {
+            GameSystem.N3DS, GameSystem.NDS -> 0.3f
+            else -> 0.38f
+        }
         val filter = prefs.filter
         val integer = prefs.integerScale
         glView.queueEvent { NativeBridge.setDisplay(filter, integer, if (portrait) 1 else 0, reserve) }
@@ -438,7 +475,8 @@ class GameActivity : AppCompatActivity() {
             getString(R.string.menu_filter) to { pickFilter() },
         )
         if (game.system == GameSystem.N3DS) items += getString(R.string.menu_screen_layout) to { pickLayout() }
-        if (game.system != GameSystem.N3DS && NativeBridge.linkSupported())
+        if (game.system == GameSystem.NDS) items += getString(R.string.menu_screen_layout) to { pickNdsLayout() }
+        if ((game.system == GameSystem.GBA || game.system == GameSystem.GB) && NativeBridge.linkSupported())
             items += (if (linkUi.connected) "Link cable: conectado" else "Link cable (rede)") to { linkUi.show() }
         items += getString(R.string.menu_edit_controls) to { startEditing() }
         items += (if (overlay.visibility == View.VISIBLE) getString(R.string.menu_hide_controls)
@@ -521,6 +559,19 @@ class GameActivity : AppCompatActivity() {
             .setSingleChoiceItems(names, current) { d, which ->
                 if (which < values.size) prefs.setN3dsLayout(values[which])
                 else prefs.setN3dsSwap(!prefs.n3dsSwapScreens)
+                applyCoreOptions()
+                d.dismiss()
+            })
+    }
+
+    private fun pickNdsLayout() {
+        val names = resources.getStringArray(R.array.nds_layout_names)
+        val values = resources.getStringArray(R.array.nds_layout_values)
+        val current = values.indexOf(prefs.ndsLayout).coerceAtLeast(0)
+        subDialog(MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.menu_screen_layout)
+            .setSingleChoiceItems(names, current) { d, which ->
+                prefs.setNdsLayout(values[which])
                 applyCoreOptions()
                 d.dismiss()
             })

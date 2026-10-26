@@ -77,7 +77,7 @@ class SettingsActivity : AppCompatActivity() {
             refreshBios()
             preferenceScreen.addPreference(Preference(requireContext()).apply {
                 title = "Cartucho ${BuildConfig.VERSION_NAME}"
-                summary = "Game Boy Advance e Game Boy: VBA-M. Nintendo 3DS: Azahar. " +
+                summary = "Game Boy Advance e Game Boy: VBA-M. Nintendo DS: melonDS. Nintendo 3DS: Azahar. " +
                     "Ambos são software livre (GPL)."
                 isSelectable = false
             })

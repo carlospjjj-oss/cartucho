@@ -1,6 +1,7 @@
 #include "core_host.h"
 
 #include <dlfcn.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <cstdarg>
@@ -98,6 +99,21 @@ bool ReadFile(const std::string& path, std::vector<uint8_t>* out) {
     const bool ok = !std::ferror(f);
     std::fclose(f);
     return ok;
+}
+
+bool ReadFd(int fd, std::vector<uint8_t>* out) {
+    out->clear();
+    uint8_t chunk[1 << 16];
+    off_t offset = 0;
+    for (;;) {
+        const ssize_t n = pread(fd, chunk, sizeof(chunk), offset);
+        if (n < 0)
+            return false;
+        if (n == 0)
+            return true;
+        out->insert(out->end(), chunk, chunk + n);
+        offset += n;
+    }
 }
 
 // Writes through a temporary file so a crash mid-write never leaves a
@@ -255,7 +271,8 @@ bool CoreHost::LoadGame(const std::string& rom_path, const std::string& save_pat
     retro_game_info info{};
     info.path = rom_path_.c_str();
     if (!system_info_.need_fullpath) {
-        if (!ReadFile(rom_path_, &rom_data_)) {
+        const bool ok = rom_fd_ >= 0 ? ReadFd(rom_fd_, &rom_data_) : ReadFile(rom_path_, &rom_data_);
+        if (!ok || rom_data_.empty()) {
             *error = "Could not read " + rom_path_;
             return false;
         }

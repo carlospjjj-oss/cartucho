@@ -52,6 +52,7 @@ std::unique_ptr<AudioOutput> g_audio;
 // lifecycle) and polled from the render thread.
 std::mutex g_audio_mutex;
 std::string g_rom, g_save;
+int g_rom_fd = -1;
 
 std::string ToStd(JNIEnv* env, jstring s) {
     if (!s)
@@ -88,9 +89,12 @@ JNI_FN(jstring, open)(JNIEnv* env, jobject, jstring core, jstring system_dir, js
     return nullptr;
 }
 
-JNI_FN(void, setGame)(JNIEnv* env, jobject, jstring rom, jstring save) {
+JNI_FN(void, setGame)(JNIEnv* env, jobject, jstring rom, jstring save, jint fd) {
     g_rom = ToStd(env, rom);
     g_save = ToStd(env, save);
+    g_rom_fd = fd;
+    if (g_session)
+        g_session->host().SetRomFd(fd);
 }
 
 JNI_FN(void, setOption)(JNIEnv* env, jobject, jstring key, jstring value) {

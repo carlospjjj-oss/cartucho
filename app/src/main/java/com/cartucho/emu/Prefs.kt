@@ -24,6 +24,9 @@ class Prefs(context: Context) {
     val n3dsLayout: String get() = p.getString("n3ds_layout", "auto")!!
     val n3dsSwapScreens: Boolean get() = p.getBoolean("n3ds_swap", false)
 
+    val ndsLayout: String get() = p.getString("nds_layout", "auto")!!
+    fun setNdsLayout(value: String) = p.edit().putString("nds_layout", value).apply()
+
     val downloadCovers: Boolean get() = p.getBoolean("download_covers", true)
 
     fun setFilter(value: Int) = p.edit().putString("filter", value.toString()).apply()

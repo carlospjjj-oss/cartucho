@@ -62,7 +62,16 @@ int main(int argc, char** argv) {
     CHECK(host.LoadCore(argv[1], &error), "load core %s", error.c_str());
     if (failures)
         return 1;
-    CHECK(host.LoadGame(argv[2], dir + "/game.srm", &error), "load game %s", error.c_str());
+    // With CARTUCHO_TEST_FD set, hand the game over as an open descriptor
+    // and a path that does not exist, the way the Android app does.
+    std::string rom = argv[2];
+    if (std::getenv("CARTUCHO_TEST_FD")) {
+        FILE* f = std::fopen(argv[2], "rb");
+        host.SetRomFd(f ? fileno(f) : -1);
+        rom = "/nonexistent/" + rom.substr(rom.find_last_of('/') + 1);
+    }
+    CHECK(host.LoadGame(rom, dir + "/game.srm", &error), "load game %s (%s)", error.c_str(),
+          rom.c_str());
     if (failures)
         return 1;
 

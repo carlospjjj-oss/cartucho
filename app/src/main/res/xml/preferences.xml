@@ -57,6 +57,16 @@
             app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="Nintendo DS">
+        <ListPreference
+            app:key="nds_layout"
+            app:title="Layout das telas"
+            app:entries="@array/nds_layout_names"
+            app:entryValues="@array/nds_layout_values"
+            app:defaultValue="auto"
+            app:useSimpleSummaryProvider="true" />
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="Nintendo 3DS">
         <ListPreference
             app:key="n3ds_resolution"

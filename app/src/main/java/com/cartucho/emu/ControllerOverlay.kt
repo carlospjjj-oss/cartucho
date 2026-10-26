@@ -144,7 +144,7 @@ class ControllerOverlay(context: Context) : View(context) {
 
     private fun fitBesidePicture(list: List<Control>): List<Control> {
         val r = gameRect ?: return list
-        if (!landscape || width == 0 || system == GameSystem.N3DS) return list
+        if (!landscape || width == 0 || system == GameSystem.N3DS || system == GameSystem.NDS) return list
         val areaW = (width - insetL - insetR).toFloat()
         val areaH = (height - insetT - insetB).toFloat()
         // Free column on each side of the picture, in pixels.
@@ -503,6 +503,31 @@ class ControllerOverlay(context: Context) : View(context) {
         private fun ff(x: Float, y: Float) = Control("ff", Kind.FAST_FORWARD, "»", -1, x, y, 40f)
 
         fun defaults(system: GameSystem, landscape: Boolean): List<Control> = when (system) {
+            GameSystem.NDS -> if (landscape) listOf(
+                dpad(0.1f, 0.62f, 140f),
+                b("a", "A", Retro.A, 0.945f, 0.6f, 58f),
+                b("b", "B", Retro.B, 0.88f, 0.74f, 58f),
+                b("x", "X", Retro.X, 0.88f, 0.46f, 58f),
+                b("y", "Y", Retro.Y, 0.815f, 0.6f, 58f),
+                pill("l", "L", Retro.L, 0.07f, 0.09f, 92f),
+                pill("r", "R", Retro.R, 0.93f, 0.09f, 92f),
+                pill("select", "SELECT", Retro.SELECT, 0.06f, 0.95f, 76f, 30f),
+                pill("start", "START", Retro.START, 0.94f, 0.95f, 76f, 30f),
+                menu(0.94f, 0.25f),
+                ff(0.06f, 0.25f),
+            ) else listOf(
+                pill("l", "L", Retro.L, 0.1f, 0.72f, 92f),
+                pill("r", "R", Retro.R, 0.9f, 0.72f, 92f),
+                dpad(0.21f, 0.85f, 136f),
+                b("a", "A", Retro.A, 0.91f, 0.84f, 58f),
+                b("b", "B", Retro.B, 0.8f, 0.91f, 58f),
+                b("x", "X", Retro.X, 0.8f, 0.77f, 58f),
+                b("y", "Y", Retro.Y, 0.69f, 0.84f, 58f),
+                pill("select", "SELECT", Retro.SELECT, 0.4f, 0.965f, 76f, 30f),
+                pill("start", "START", Retro.START, 0.6f, 0.965f, 76f, 30f),
+                menu(0.93f, 0.025f),
+                ff(0.07f, 0.025f),
+            )
             GameSystem.N3DS -> if (landscape) listOf(
                 Control("stick", Kind.STICK, "", -1, 0.09f, 0.42f, 124f),
                 dpad(0.11f, 0.78f, 132f),

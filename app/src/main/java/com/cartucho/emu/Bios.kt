@@ -53,7 +53,7 @@ enum class Bios(val key: String, val title: String, val fileName: String, val si
         fun anyFor(context: Context, system: GameSystem) = when (system) {
             GameSystem.GBA -> GBA.installed(context)
             GameSystem.GB -> GB.installed(context) || GBC.installed(context)
-            GameSystem.N3DS -> false
+            GameSystem.NDS, GameSystem.N3DS -> false
         }
     }
 }
