@@ -52,6 +52,13 @@ class GameActivity : AppCompatActivity() {
     private var romFile: android.os.ParcelFileDescriptor? = null
     private lateinit var linkUi: LinkUi
     private lateinit var cheats: Cheats
+    private lateinit var devices: Devices
+    private var lastRumble = 0
+    private val micPermission = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        devices.micPermissionAnswered()
+        if (!granted) showMessage("Sem microfone: o jogo vai ouvir silêncio")
+    }
     @Volatile private var loaded = false
     @Volatile private var resumed = false
     private var fastForward = false
@@ -98,6 +105,9 @@ class GameActivity : AppCompatActivity() {
         }
         ErrorReport.gameStarting(this, game)
         cheats = Cheats(this, game)
+        devices = Devices(this, prefs) { micPermission.launch(android.Manifest.permission.RECORD_AUDIO) }
+        // Azahar reads the accelerometer in g, the others in m/s².
+        NativeBridge.setAccelInG(game.system == GameSystem.N3DS)
         linkUi = LinkUi(this, glView, game, romCrc, modal)
         // The surface view joins the layout only now: GLSurfaceView crashes
         // if its surface appears before it has a renderer.
@@ -330,6 +340,7 @@ class GameActivity : AppCompatActivity() {
         overlay.globalScale = prefs.overlayScale
         overlay.haptics = prefs.haptics
         overlay.quickButtons = prefs.quickButtons
+        overlay.micButton = prefs.microphone
         overlay.configure(game.system, landscape)
     }
 
@@ -369,6 +380,7 @@ class GameActivity : AppCompatActivity() {
 
     override fun onPause() {
         resumed = false
+        if (::devices.isInitialized) devices.stop()
         if (rendererSet) {
             NativeBridge.setPaused(true)
             NativeBridge.stopAudio()
@@ -444,6 +456,16 @@ class GameActivity : AppCompatActivity() {
         override fun onDrawFrame(gl: GL10?) {
             if (!loaded) return
             NativeBridge.drawFrame()
+            val rumble = NativeBridge.rumble()
+            if (rumble != lastRumble) {
+                lastRumble = rumble
+                runOnUiThread { devices.onRumble(rumble) }
+            }
+            if (frameCounter % 10 == 0) {
+                val wanted = NativeBridge.sensorsWanted()
+                val mic = NativeBridge.micRate()
+                runOnUiThread { if (resumed) devices.update(wanted, mic) }
+            }
             if (++frameCounter % 20 == 0) {
                 val message = NativeBridge.takeMessage()
                 val fps = NativeBridge.measuredFps()
@@ -475,6 +497,7 @@ class GameActivity : AppCompatActivity() {
     // --- Input ------------------------------------------------------------------
 
     private fun pushInput() {
+        if (::devices.isInitialized) devices.gamepadDeviceId = gamepad.lastDeviceId
         NativeBridge.setButtons(overlayMask or gamepad.buttons)
         val padActive = gamepad.leftX != 0f || gamepad.leftY != 0f
         NativeBridge.setAnalog(0, if (padActive) gamepad.leftX else overlayStickX,

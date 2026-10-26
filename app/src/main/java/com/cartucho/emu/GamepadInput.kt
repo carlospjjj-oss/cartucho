@@ -26,6 +26,10 @@ class GamepadInput(private val onChange: () -> Unit, private val onMenu: () -> U
     var gamepadSeen = false
         private set
 
+    /** The controller last used, for its vibration motor. */
+    var lastDeviceId = -1
+        private set
+
     private var hatMask = 0
     private var axisDpadMask = 0
     private var keyMask = 0
@@ -38,7 +42,10 @@ class GamepadInput(private val onChange: () -> Unit, private val onMenu: () -> U
             return true
         }
         val bit = KEY_MAP[code] ?: return false
-        if (isGamepad(event.source)) gamepadSeen = true
+        if (isGamepad(event.source)) {
+            gamepadSeen = true
+            lastDeviceId = event.deviceId
+        }
         val before = keyMask
         keyMask = if (event.action == KeyEvent.ACTION_DOWN) keyMask or (1 shl bit)
                   else keyMask and (1 shl bit).inv()
@@ -49,6 +56,7 @@ class GamepadInput(private val onChange: () -> Unit, private val onMenu: () -> U
     fun onMotion(event: MotionEvent): Boolean {
         if (event.action != MotionEvent.ACTION_MOVE || !isJoystick(event.source)) return false
         gamepadSeen = true
+        lastDeviceId = event.deviceId
         leftX = dead(event.getAxisValue(MotionEvent.AXIS_X))
         leftY = dead(event.getAxisValue(MotionEvent.AXIS_Y))
         rightX = dead(event.getAxisValue(MotionEvent.AXIS_Z))

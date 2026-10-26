@@ -85,6 +85,11 @@ struct CoreHost::Api {
     bool initialized = false;
 };
 
+// libretro leaves the microphone handle to the frontend.
+struct retro_microphone {
+    int unused;
+};
+
 namespace {
 
 CoreHost* g_current = nullptr;
@@ -465,6 +470,170 @@ std::string CoreHost::TakeMessage() {
     return m;
 }
 
+// --- Sensors, rumble, microphone ---------------------------------------------------
+
+void CoreHost::SetAccel(float x, float y, float z) {
+    accel_[0].store(x, std::memory_order_relaxed);
+    accel_[1].store(y, std::memory_order_relaxed);
+    accel_[2].store(z, std::memory_order_relaxed);
+}
+
+void CoreHost::SetGyro(float x, float y, float z) {
+    gyro_[0].store(x, std::memory_order_relaxed);
+    gyro_[1].store(y, std::memory_order_relaxed);
+    gyro_[2].store(z, std::memory_order_relaxed);
+}
+
+unsigned CoreHost::mic_active_rate() const {
+    std::lock_guard<std::mutex> lock(mic_mutex_);
+    return (mic_ && mic_->active) ? mic_->rate : 0;
+}
+
+void CoreHost::PushMic(const int16_t* samples, size_t count, unsigned rate) {
+    std::lock_guard<std::mutex> lock(mic_mutex_);
+    if (!mic_ || !mic_->active || rate == 0 || mic_->rate == 0)
+        return;
+    // Linear resampling from the recording rate to the core's.
+    const double step = static_cast<double>(rate) / mic_->rate;
+    double pos = mic_pos_;
+    int16_t prev = mic_last_;
+    for (size_t i = 0; i < count; i++) {
+        const int16_t next = samples[i];
+        while (pos < 1.0) {
+            mic_buf_.push_back(static_cast<int16_t>(prev + (next - prev) * pos));
+            pos += step;
+        }
+        pos -= 1.0;
+        prev = next;
+    }
+    mic_pos_ = pos;
+    mic_last_ = prev;
+    // Keep at most half a second: latency matters more than gaps.
+    const size_t cap = mic_->rate / 2;
+    if (mic_buf_.size() > cap)
+        mic_buf_.erase(mic_buf_.begin(), mic_buf_.end() - static_cast<ptrdiff_t>(cap));
+}
+
+// Static callbacks handed to the cores; they reach the live host.
+struct CoreHostCallbacks {
+    static bool RETRO_CALLCONV SetSensorState(unsigned port, enum retro_sensor_action action,
+                                              unsigned rate) {
+        CoreHost* h = g_current;
+        if (!h || port != 0)
+            return false;
+        int bit = 0;
+        bool on = false;
+        switch (action) {
+            case RETRO_SENSOR_ACCELEROMETER_ENABLE: bit = CoreHost::kAccel; on = true; break;
+            case RETRO_SENSOR_ACCELEROMETER_DISABLE: bit = CoreHost::kAccel; break;
+            case RETRO_SENSOR_GYROSCOPE_ENABLE: bit = CoreHost::kGyro; on = true; break;
+            case RETRO_SENSOR_GYROSCOPE_DISABLE: bit = CoreHost::kGyro; break;
+            case RETRO_SENSOR_ILLUMINANCE_ENABLE: bit = CoreHost::kLight; on = true; break;
+            case RETRO_SENSOR_ILLUMINANCE_DISABLE: bit = CoreHost::kLight; break;
+            default: return false;
+        }
+        if (on)
+            h->sensors_wanted_.fetch_or(bit);
+        else
+            h->sensors_wanted_.fetch_and(~bit);
+        return true;
+    }
+
+    static float RETRO_CALLCONV GetSensorInput(unsigned port, unsigned id) {
+        CoreHost* h = g_current;
+        if (!h || port != 0)
+            return 0.f;
+        const float accel_scale = h->accel_in_g_ ? 1.0f / 9.80665f : 1.0f;
+        switch (id) {
+            case RETRO_SENSOR_ACCELEROMETER_X: return h->accel_[0].load() * accel_scale;
+            case RETRO_SENSOR_ACCELEROMETER_Y: return h->accel_[1].load() * accel_scale;
+            case RETRO_SENSOR_ACCELEROMETER_Z: return h->accel_[2].load() * accel_scale;
+            case RETRO_SENSOR_GYROSCOPE_X: return h->gyro_[0].load();
+            case RETRO_SENSOR_GYROSCOPE_Y: return h->gyro_[1].load();
+            case RETRO_SENSOR_GYROSCOPE_Z: return h->gyro_[2].load();
+            case RETRO_SENSOR_ILLUMINANCE: return h->light_.load();
+            default: return 0.f;
+        }
+    }
+
+    static bool RETRO_CALLCONV SetRumble(unsigned port, enum retro_rumble_effect effect,
+                                         uint16_t strength) {
+        CoreHost* h = g_current;
+        if (!h || port != 0 || effect > RETRO_RUMBLE_WEAK)
+            return false;
+        h->rumble_[effect].store(strength, std::memory_order_relaxed);
+        return true;
+    }
+
+    static retro_microphone_t* RETRO_CALLCONV OpenMic(const retro_microphone_params_t* params) {
+        CoreHost* h = g_current;
+        if (!h)
+            return nullptr;
+        std::lock_guard<std::mutex> lock(h->mic_mutex_);
+        // One microphone at a time; a core that opens a new one (melonDS DS
+        // does while loading) gets it, and the old handle stops counting.
+        h->mic_ = std::make_unique<CoreHost::Mic>();
+        h->mic_->rate = (params && params->rate) ? params->rate : 44100;
+        h->mic_buf_.clear();
+        return reinterpret_cast<retro_microphone_t*>(h->mic_.get());
+    }
+
+    static void RETRO_CALLCONV CloseMic(retro_microphone_t* mic) {
+        CoreHost* h = g_current;
+        if (!h || !mic)
+            return;
+        std::lock_guard<std::mutex> lock(h->mic_mutex_);
+        if (reinterpret_cast<CoreHost::Mic*>(mic) == h->mic_.get())
+            h->mic_.reset();
+    }
+
+    static bool RETRO_CALLCONV GetMicParams(const retro_microphone_t* mic,
+                                            retro_microphone_params_t* params) {
+        CoreHost* h = g_current;
+        if (!h || !mic || !params)
+            return false;
+        std::lock_guard<std::mutex> lock(h->mic_mutex_);
+        params->rate = reinterpret_cast<const CoreHost::Mic*>(mic)->rate;
+        return true;
+    }
+
+    static bool RETRO_CALLCONV SetMicState(retro_microphone_t* mic, bool state) {
+        CoreHost* h = g_current;
+        if (!h || !mic)
+            return false;
+        std::lock_guard<std::mutex> lock(h->mic_mutex_);
+        auto* m = reinterpret_cast<CoreHost::Mic*>(mic);
+        if (m->active != state)
+            h->mic_buf_.clear();
+        m->active = state;
+        return true;
+    }
+
+    static bool RETRO_CALLCONV GetMicState(const retro_microphone_t* mic) {
+        CoreHost* h = g_current;
+        if (!h || !mic)
+            return false;
+        std::lock_guard<std::mutex> lock(h->mic_mutex_);
+        return reinterpret_cast<const CoreHost::Mic*>(mic)->active;
+    }
+
+    static int RETRO_CALLCONV ReadMic(retro_microphone_t* mic, int16_t* samples, size_t count) {
+        CoreHost* h = g_current;
+        if (!h || !mic)
+            return -1;
+        std::lock_guard<std::mutex> lock(h->mic_mutex_);
+        if (!reinterpret_cast<CoreHost::Mic*>(mic)->active)
+            return -1;
+        // Always hand back what was asked for, padding with silence: cores
+        // poll every frame and do not cope well with short reads.
+        const size_t n = std::min(count, h->mic_buf_.size());
+        std::memcpy(samples, h->mic_buf_.data(), n * sizeof(int16_t));
+        h->mic_buf_.erase(h->mic_buf_.begin(), h->mic_buf_.begin() + static_cast<ptrdiff_t>(n));
+        std::memset(samples + n, 0, (count - n) * sizeof(int16_t));
+        return static_cast<int>(count);
+    }
+};
+
 // --- Environment ---------------------------------------------------------------
 
 bool CoreHost::Environment(unsigned cmd, void* data) {
@@ -622,6 +791,30 @@ bool CoreHost::Environment(unsigned cmd, void* data) {
         case RETRO_ENVIRONMENT_SHUTDOWN:
             shutdown_requested_ = true;
             return true;
+
+        case RETRO_ENVIRONMENT_GET_SENSOR_INTERFACE: {
+            auto* s = static_cast<retro_sensor_interface*>(data);
+            s->set_sensor_state = &CoreHostCallbacks::SetSensorState;
+            s->get_sensor_input = &CoreHostCallbacks::GetSensorInput;
+            return true;
+        }
+
+        case RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE:
+            static_cast<retro_rumble_interface*>(data)->set_rumble_state = &CoreHostCallbacks::SetRumble;
+            return true;
+
+        case RETRO_ENVIRONMENT_GET_MICROPHONE_INTERFACE: {
+            auto* m = static_cast<retro_microphone_interface*>(data);
+            if (!m || m->interface_version != RETRO_MICROPHONE_INTERFACE_VERSION)
+                return false;
+            m->open_mic = &CoreHostCallbacks::OpenMic;
+            m->close_mic = &CoreHostCallbacks::CloseMic;
+            m->get_params = &CoreHostCallbacks::GetMicParams;
+            m->set_mic_state = &CoreHostCallbacks::SetMicState;
+            m->get_mic_state = &CoreHostCallbacks::GetMicState;
+            m->read_mic = &CoreHostCallbacks::ReadMic;
+            return true;
+        }
 
         case RETRO_ENVIRONMENT_GET_JIT_CAPABLE:
             *static_cast<bool*>(data) = true;

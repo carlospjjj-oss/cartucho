@@ -479,3 +479,51 @@ JNI_FN(jintArray, screenshot)(JNIEnv* env, jobject) {
     env->SetIntArrayRegion(arr, 0, static_cast<jsize>(out.size()), out.data());
     return arr;
 }
+
+// --- Motion sensors, rumble, microphone -------------------------------------------
+
+// Bits of the sensors the core switched on (1 accel, 2 gyro, 4 light).
+JNI_FN(jint, sensorsWanted)(JNIEnv*, jobject) {
+    return g_session ? g_session->host().sensors_wanted() : 0;
+}
+
+// Accelerometer (m/s^2) and gyroscope (rad/s), already in screen axes.
+JNI_FN(void, setMotion)(JNIEnv*, jobject, jfloat ax, jfloat ay, jfloat az, jfloat gx, jfloat gy,
+                        jfloat gz) {
+    if (!g_session)
+        return;
+    g_session->host().SetAccel(ax, ay, az);
+    g_session->host().SetGyro(gx, gy, gz);
+}
+
+JNI_FN(void, setLight)(JNIEnv*, jobject, jfloat lux) {
+    if (g_session)
+        g_session->host().SetLight(lux);
+}
+
+JNI_FN(void, setAccelInG)(JNIEnv*, jobject, jboolean on) {
+    if (g_session)
+        g_session->host().set_accel_in_g(on);
+}
+
+// Rumble strength asked by the core: strong << 16 | weak (0..65535 each).
+JNI_FN(jint, rumble)(JNIEnv*, jobject) {
+    if (!g_session)
+        return 0;
+    return static_cast<jint>((static_cast<uint32_t>(g_session->host().rumble_strong()) << 16) |
+                             g_session->host().rumble_weak());
+}
+
+// Sample rate the core wants while listening, 0 when the microphone is off.
+JNI_FN(jint, micRate)(JNIEnv*, jobject) {
+    return g_session ? static_cast<jint>(g_session->host().mic_active_rate()) : 0;
+}
+
+JNI_FN(void, pushMic)(JNIEnv* env, jobject, jshortArray samples, jint count, jint rate) {
+    if (!g_session || count <= 0)
+        return;
+    jshort* data = env->GetShortArrayElements(samples, nullptr);
+    g_session->host().PushMic(reinterpret_cast<const int16_t*>(data), static_cast<size_t>(count),
+                              static_cast<unsigned>(rate));
+    env->ReleaseShortArrayElements(samples, data, JNI_ABORT);
+}

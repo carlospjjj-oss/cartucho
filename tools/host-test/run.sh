@@ -17,6 +17,7 @@ gcc -shared -fPIC -O1 -I$SRC fake_hw_core.c -o "$OUT/fake_hw_core.so"
 $CXX gl_test.cpp $SRC/core_host.cpp $SRC/gl_presenter.cpp -lEGL -lGLESv2 -ldl -o "$OUT/gl_test"
 $CXX host_test.cpp $SRC/core_host.cpp -ldl -o "$OUT/host_test"
 $CXX rewind_test.cpp $SRC/rewind.cpp $SRC/core_host.cpp -lz -ldl -lpthread -o "$OUT/rewind_test"
+$CXX devices_test.cpp $SRC/core_host.cpp -ldl -o "$OUT/devices_test"
 $CXX link_test.cpp $SRC/core_host.cpp -ldl -lpthread -o "$OUT/link_test"
 
 "$OUT/pacer_test"

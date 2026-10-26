@@ -29,6 +29,9 @@ class Prefs(context: Context) {
     val ndsLayout: String get() = p.getString("nds_layout", "auto")!!
     fun setNdsLayout(value: String) = p.edit().putString("nds_layout", value).apply()
 
+    val motion: Boolean get() = p.getBoolean("motion", true)
+    val vibration: Boolean get() = p.getBoolean("vibration", true)
+    val microphone: Boolean get() = p.getBoolean("microphone", true)
     val rewind: Boolean get() = p.getBoolean("rewind", true)
     val quickButtons: Boolean get() = p.getBoolean("quick_buttons", true)
 

@@ -66,6 +66,18 @@ object NativeBridge {
     /** GL thread. [width, height, ARGB pixels...] or null. */
     external fun screenshot(): IntArray?
 
+    // Motion sensors, rumble, microphone.
+    /** Bits the core switched on: 1 accelerometer, 2 gyroscope, 4 light. */
+    external fun sensorsWanted(): Int
+    external fun setMotion(ax: Float, ay: Float, az: Float, gx: Float, gy: Float, gz: Float)
+    external fun setLight(lux: Float)
+    external fun setAccelInG(on: Boolean)
+    /** strong << 16 | weak. */
+    external fun rumble(): Int
+    /** Rate the core listens at, 0 when the microphone is off. */
+    external fun micRate(): Int
+    external fun pushMic(samples: ShortArray, count: Int, rate: Int)
+
     // Network link (GBA / GB). linkStart and linkStop: GL thread.
     external fun linkSupported(): Boolean
     /** mode: 0 GBA cable, 1 GBA wireless adapter, 2 Game Boy cable. */

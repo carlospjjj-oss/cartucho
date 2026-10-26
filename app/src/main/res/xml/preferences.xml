@@ -60,6 +60,24 @@
             app:defaultValue="true" />
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="Sensores do celular">
+        <SwitchPreferenceCompat
+            app:key="motion"
+            app:title="Sensor de movimento"
+            app:summary="Jogos de inclinar o aparelho (Kirby Tilt 'n' Tumble, WarioWare Twisted, mira no 3DS)"
+            app:defaultValue="true" />
+        <SwitchPreferenceCompat
+            app:key="vibration"
+            app:title="Vibração dos jogos"
+            app:summary="Vibra o celular, ou o controle Bluetooth se ele tiver motor"
+            app:defaultValue="true" />
+        <SwitchPreferenceCompat
+            app:key="microphone"
+            app:title="Microfone"
+            app:summary="DS: segure o botão MIC para soprar ou falar. 3DS: quando o jogo pedir"
+            app:defaultValue="true" />
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="Acelerar">
         <ListPreference
             app:key="ff_speed"

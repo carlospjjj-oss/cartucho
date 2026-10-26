@@ -2,6 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- DS / 3DS games that listen (blowing, speaking); asked only when one does. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />
+    <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
     <!-- 3DS games are gigabytes: they are opened where they are, by path,
          which Android only allows with these (see Storage.kt). -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />

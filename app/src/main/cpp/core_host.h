@@ -147,6 +147,28 @@ public:
     // patched VBA-M core's cartucho_link_*), or null.
     void* Symbol(const char* name) const;
 
+    // --- Motion sensors, rumble, microphone ----------------------------------
+    // Bits of sensors the core switched on: 1 accelerometer, 2 gyroscope,
+    // 4 light. The platform listens to those only.
+    enum SensorBits { kAccel = 1, kGyro = 2, kLight = 4 };
+    int sensors_wanted() const { return sensors_wanted_.load(std::memory_order_relaxed); }
+    // Accelerometer in m/s^2 and gyroscope in rad/s, axes relative to the
+    // screen as the player sees it (libretro convention). Any thread.
+    void SetAccel(float x, float y, float z);
+    void SetGyro(float x, float y, float z);
+    void SetLight(float lux) { light_.store(lux, std::memory_order_relaxed); }
+    // Some cores read the accelerometer in g instead of m/s^2 (Azahar).
+    void set_accel_in_g(bool on) { accel_in_g_ = on; }
+
+    // Rumble strength the core asks for, 0..65535, strong and weak motors.
+    uint16_t rumble_strong() const { return rumble_[0].load(std::memory_order_relaxed); }
+    uint16_t rumble_weak() const { return rumble_[1].load(std::memory_order_relaxed); }
+
+    // Microphone: the rate the core wants while it is listening, else 0.
+    unsigned mic_active_rate() const;
+    // Feeds recorded mono samples (any rate; resampled to the core's).
+    void PushMic(const int16_t* samples, size_t count, unsigned rate);
+
     // Options as declared by the core (key -> "desc; a|b|c") and current values.
     std::map<std::string, std::string> DeclaredOptions();
     std::string OptionValue(const std::string& key);
@@ -207,6 +229,24 @@ private:
     bool options_dirty_ = false;
 
     std::vector<uint8_t> last_saved_sram_;
+
+    // Sensors / rumble / microphone.
+    friend struct CoreHostCallbacks;
+    std::atomic<int> sensors_wanted_{0};
+    std::atomic<float> accel_[3]{{0.f}, {0.f}, {0.f}};
+    std::atomic<float> gyro_[3]{{0.f}, {0.f}, {0.f}};
+    std::atomic<float> light_{0.f};
+    bool accel_in_g_ = false;
+    std::atomic<uint16_t> rumble_[2]{{0}, {0}};
+    struct Mic {
+        unsigned rate = 0;
+        bool active = false;
+    };
+    std::unique_ptr<Mic> mic_;
+    mutable std::mutex mic_mutex_;
+    std::vector<int16_t> mic_buf_;  // at the core's rate, oldest first
+    double mic_pos_ = 0.0;          // resampling phase
+    int16_t mic_last_ = 0;
 
     std::mutex message_mutex_;
     std::string message_;

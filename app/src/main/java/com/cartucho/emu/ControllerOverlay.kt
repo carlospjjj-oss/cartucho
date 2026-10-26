@@ -63,6 +63,9 @@ class ControllerOverlay(context: Context) : View(context) {
     /** Show the rewind and quick save/load buttons. */
     var quickButtons = true
         set(value) { field = value; invalidate() }
+    /** Show the DS MIC button. */
+    var micButton = true
+        set(value) { field = value; invalidate() }
     /** Whether this game can rewind (hides the button otherwise). */
     var rewindAvailable = false
         set(value) { field = value; invalidate() }
@@ -291,7 +294,7 @@ class ControllerOverlay(context: Context) : View(context) {
     private fun shown(c: Control) = when (c.kind) {
         Kind.REWIND -> quickButtons && rewindAvailable
         Kind.QUICK_SAVE, Kind.QUICK_LOAD -> quickButtons
-        else -> true
+        else -> c.id != "mic" || micButton
     }
 
     private fun drawControl(canvas: Canvas, c: Control) {
@@ -566,6 +569,8 @@ class ControllerOverlay(context: Context) : View(context) {
                 pill("start", "START", Retro.START, 0.94f, 0.95f, 76f, 30f),
                 menu(0.94f, 0.25f),
                 ff(0.06f, 0.25f),
+                // Hold to blow / speak (melonDS DS: L3 is the mic button).
+                b("mic", "MIC", Retro.L3, 0.06f, 0.4f, 46f),
             ) else listOf(
                 pill("l", "L", Retro.L, 0.1f, 0.72f, 92f),
                 pill("r", "R", Retro.R, 0.9f, 0.72f, 92f),
@@ -578,6 +583,7 @@ class ControllerOverlay(context: Context) : View(context) {
                 pill("start", "START", Retro.START, 0.6f, 0.965f, 76f, 30f),
                 menu(0.93f, 0.025f),
                 ff(0.07f, 0.025f),
+                b("mic", "MIC", Retro.L3, 0.5f, 0.86f, 46f),
             )
             GameSystem.N3DS -> if (landscape) listOf(
                 Control("stick", Kind.STICK, "", -1, 0.09f, 0.42f, 124f),
