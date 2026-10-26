@@ -8,6 +8,7 @@ cd "$(dirname "$0")"
 SRC=../../app/src/main/cpp
 OUT=${OUT:-build}
 mkdir -p "$OUT"
+export OUT
 CXX="${CXX:-g++} -std=c++17 -O1 -g -Wall -Wextra -Wno-unused-parameter -I$SRC"
 
 $CXX pacer_test.cpp $SRC/session.cpp $SRC/core_host.cpp $SRC/gl_presenter.cpp -lGLESv2 -ldl -o "$OUT/pacer_test"

@@ -37,6 +37,12 @@ static int failures = 0;
 
 static const int kW = 800, kH = 600;
 
+// Where the pictures go: $OUT (set by run.sh) or the current directory.
+static std::string OutDir() {
+    const char* out = std::getenv("OUT");
+    return out ? out : ".";
+}
+
 static bool MakeContext() {
     // Ask Mesa for its surfaceless platform explicitly: headless CI has no
     // window system, and the default display may pick one that is missing.
@@ -77,6 +83,8 @@ static const uint8_t* At(const std::vector<uint8_t>& px, int x, int y) {
 
 static void WritePpm(const std::string& path, const std::vector<uint8_t>& px) {
     FILE* f = std::fopen(path.c_str(), "wb");
+    if (!f)
+        return;
     std::fprintf(f, "P6\n%d %d\n255\n", kW, kH);
     for (int y = 0; y < kH; y++)
         for (int x = 0; x < kW; x++)
@@ -122,7 +130,7 @@ int main(int argc, char** argv) {
         CHECK(top[0] > 200 && top[2] < 50, "top half red (%d,%d,%d)", top[0], top[1], top[2]);
         CHECK(bottom[2] > 200 && bottom[0] < 50, "bottom half blue (%d,%d,%d)", bottom[0],
               bottom[1], bottom[2]);
-        WritePpm("/tmp/claude-0/hw.ppm", px);
+        WritePpm(OutDir() + "/hw.ppm", px);
 
         // Portrait surface, picture stuck to the top with room for controls.
         presenter.set_vertical_align(1);
