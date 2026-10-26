@@ -189,6 +189,31 @@ class LibraryActivity : AppCompatActivity() {
                     size = c.getLong(1)
                 }
             }
+        if (Archives.isArchive(name)) {
+            val archiveName = name
+            io.execute {
+                val inner = Archives.peek(this, uri, archiveName)
+                runOnUiThread {
+                    val innerName = inner?.name?.substringAfterLast('/')
+                    val sys = innerName?.let { GameSystem.forFileName(it) }
+                    if (inner == null || sys == null) {
+                        Snackbar.make(grid, R.string.unsupported_file, Snackbar.LENGTH_LONG).show()
+                        return@runOnUiThread
+                    }
+                    runCatching {
+                        contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    val game = Game(uri.toString(), innerName, sys, size, inner.name, archiveName)
+                    store.addLoose(game)
+                    if (games.none { it.uri == game.uri }) {
+                        games = (games + game).sortedBy { it.title.lowercase() }
+                        applyFilter()
+                    }
+                    launch(game)
+                }
+            }
+            return
+        }
         if (name.endsWith(".cia", ignoreCase = true)) {
             Snackbar.make(grid, R.string.cia_not_supported, Snackbar.LENGTH_LONG).show()
             return
@@ -211,7 +236,7 @@ class LibraryActivity : AppCompatActivity() {
     }
 
     private fun launch(game: Game) {
-        if (game.system == GameSystem.N3DS && Storage.directPath(this, game) == null) {
+        if (game.system == GameSystem.N3DS && game.entry == null && Storage.directPath(this, game) == null) {
             ask3dsFileAccess(game)
             return
         }

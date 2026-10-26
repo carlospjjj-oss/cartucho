@@ -28,7 +28,9 @@ saves.
 ## O que já tem
 
 - Biblioteca com capas, filtros por console, favoritos, recentes e busca.
-- Abre jogos de qualquer pasta do celular (inclusive cartão SD) sem copiar.
+- Abre jogos de qualquer pasta do celular (inclusive cartão SD) sem copiar,
+  e também jogos dentro de `.zip` e `.7z` (extraídos uma vez, na primeira vez
+  que você joga).
 - Controle na tela com multitoque, vibração, transparência e tamanho
   ajustáveis, e **modo de edição** para arrastar e redimensionar cada botão
   (layout salvo por console e por orientação).

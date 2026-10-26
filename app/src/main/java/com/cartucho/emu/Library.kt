@@ -10,9 +10,14 @@ import java.io.File
 /** One game file the library knows about. */
 data class Game(
     val uri: String,
+    /** The game's own file name (inside the archive, for zipped games). */
     val fileName: String,
     val system: GameSystem,
     val size: Long,
+    /** Path of the game inside a .zip/.7z, or null for a plain file. */
+    val entry: String? = null,
+    /** File name of the archive holding it ("" for a plain file). */
+    val archive: String = "",
 ) {
     /** "Pokemon - Fire Red Version (USA, Europe) (Rev 1).gba" -> "Pokemon - Fire Red Version". */
     val title: String
@@ -34,11 +39,15 @@ data class Game(
 
     fun toJson(): JSONObject = JSONObject()
         .put("uri", uri).put("file", fileName).put("system", system.name).put("size", size)
+        .put("entry", entry ?: "").put("archive", archive)
 
     companion object {
         fun fromJson(o: JSONObject): Game? {
             val system = GameSystem.fromName(o.optString("system")) ?: return null
-            return Game(o.getString("uri"), o.getString("file"), system, o.optLong("size"))
+            return Game(
+                o.getString("uri"), o.getString("file"), system, o.optLong("size"),
+                o.optString("entry").ifEmpty { null }, o.optString("archive"),
+            )
         }
     }
 }
@@ -122,6 +131,13 @@ class LibraryStore(private val context: Context) {
                 continue
             }
             val name = f.name ?: continue
+            if (Archives.isArchive(name)) {
+                val inner = Archives.peek(context, f.uri, name) ?: continue
+                val innerName = inner.name.substringAfterLast('/')
+                val sys = GameSystem.forFileName(innerName) ?: continue
+                out[f.uri.toString()] = Game(f.uri.toString(), innerName, sys, f.length(), inner.name, name)
+                continue
+            }
             val system = GameSystem.forFileName(name) ?: continue
             // .bin/.elf etc. are ambiguous; skip tiny files that cannot be games.
             if (f.length() < 1024) continue

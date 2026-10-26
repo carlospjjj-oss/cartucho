@@ -83,15 +83,63 @@ class GameActivity : AppCompatActivity() {
             }
         })
 
+        val extracted = game.entry?.let { Archives.extractedFile(this, game) }
+        if (extracted != null && !(extracted.exists() && extracted.length() > 0)) extractThenStart()
+        else startGame()
+    }
+
+    private fun startGame() {
         val error = prepare()
         if (error != null) {
             fail(error)
             return
         }
         linkUi = LinkUi(this, glView, game, romCrc, modal)
+        // The surface view joins the layout only now: GLSurfaceView crashes
+        // if its surface appears before it has a renderer.
+        root.addView(glView, 0, FrameLayout.LayoutParams(MATCH, MATCH))
         glView.setRenderer(Renderer())
         glView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
         rendererSet = true
+        if (resumed) glView.onResume()
+    }
+
+    /** Zipped game played for the first time: extract it, with progress. */
+    private fun extractThenStart() {
+        val bar = com.google.android.material.progressindicator.LinearProgressIndicator(this).apply {
+            max = 1000
+            isIndeterminate = false
+        }
+        val box = FrameLayout(this).apply {
+            setPadding(dp(24), dp(16), dp(24), dp(8))
+            addView(bar)
+        }
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle("Extraindo ${game.title}…")
+            .setView(box)
+            .setCancelable(false)
+            .show()
+        Thread {
+            try {
+                var last = -1
+                Archives.extract(this, game) { p ->
+                    val v = (p * 1000).toInt()
+                    if (v != last) {
+                        last = v
+                        runOnUiThread { bar.setProgressCompat(v, false) }
+                    }
+                }
+                runOnUiThread {
+                    dialog.dismiss()
+                    if (!isFinishing) startGame()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    dialog.dismiss()
+                    fail("Não foi possível extrair ${game.archive}: ${e.message ?: e.javaClass.simpleName}")
+                }
+            }
+        }.start()
     }
 
     // GLSurfaceView crashes on onPause()/onResume() without a renderer, which
@@ -100,8 +148,10 @@ class GameActivity : AppCompatActivity() {
 
     // --- Setup ------------------------------------------------------------
 
+    private lateinit var root: FrameLayout
+
     private fun buildViews() {
-        val root = FrameLayout(this)
+        root = FrameLayout(this)
         root.setBackgroundColor(Color.BLACK)
 
         glView = GLSurfaceView(this).apply {
@@ -111,7 +161,6 @@ class GameActivity : AppCompatActivity() {
             setEGLConfigChooser(8, 8, 8, 0, 0, 0)
             preserveEGLContextOnPause = true
         }
-        root.addView(glView, FrameLayout.LayoutParams(MATCH, MATCH))
 
         overlay = ControllerOverlay(this).apply {
             listener = OverlayListener()
@@ -162,7 +211,13 @@ class GameActivity : AppCompatActivity() {
     /** Opens the ROM, loads the core and passes everything native needs. */
     private fun prepare(): String? {
         var romFd = -1
-        val romPath = if (game.system == GameSystem.N3DS) {
+        val extracted = game.entry?.let { Archives.extractedFile(this, game) }
+        val romPath = if (extracted != null) {
+            // Zipped: already extracted to app storage, readable by path.
+            if (game.system == GameSystem.GBA || game.system == GameSystem.GB)
+                romCrc = java.util.zip.CRC32().apply { update(extracted.readBytes()) }.value
+            extracted.path
+        } else if (game.system == GameSystem.N3DS) {
             // The 3DS core opens the game itself, by path, and games are
             // gigabytes: open it where it is (needs all-files access).
             Storage.directPath(this, game)
