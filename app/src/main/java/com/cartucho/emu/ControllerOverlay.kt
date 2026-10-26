@@ -144,16 +144,36 @@ class ControllerOverlay(context: Context) : View(context) {
 
     private fun fitBesidePicture(list: List<Control>): List<Control> {
         val r = gameRect ?: return list
-        if (!landscape || width == 0) return list
+        if (!landscape || width == 0 || system == GameSystem.N3DS) return list
         val areaW = (width - insetL - insetR).toFloat()
-        val leftFrac = (r.left - insetL) / areaW
-        val rightFrac = ((insetL + areaW) - r.right) / areaW
-        // Need room for a D-pad (~140 dp) on each side.
-        if (minOf(leftFrac, rightFrac) * areaW < 120 * density) return list
-        for (c in list) {
-            if (c.kind == Kind.MENU || c.kind == Kind.FAST_FORWARD) continue
-            c.x = if (c.x < 0.5f) minOf(c.x / 0.3f, 0.8f) * leftFrac
-                  else 1f - minOf((1f - c.x) / 0.3f, 0.8f) * rightFrac
+        val areaH = (height - insetT - insetB).toFloat()
+        // Free column on each side of the picture, in pixels.
+        val colL = (r.left - insetL).toFloat()
+        val colR = (insetL + areaW) - r.right
+        val col = minOf(colL, colR)
+        if (col < 88 * density) return list  // too narrow: keep the overlay layout
+
+        // Lay each control out inside its column, shrinking it to fit.
+        val xl = colL / 2f / areaW                 // centre of the left column
+        val xr = 1f - colR / 2f / areaW            // centre of the right column
+        fun place(c: Control, x: Float, y: Float, maxWidthPx: Float) {
+            c.x = x
+            c.y = y
+            val natural = c.widthDp * density * globalScale
+            c.scale = minOf(1f, maxWidthPx / natural)
+        }
+        val face = minOf(col * 0.46f, 76 * density * globalScale)
+        for (c in list) when (c.id) {
+            "l" -> place(c, xl, 0.1f, col * 0.82f)
+            "r" -> place(c, xr, 0.1f, col * 0.82f)
+            "ff" -> place(c, xl, 0.25f, col * 0.34f)
+            "menu" -> place(c, xr, 0.25f, col * 0.34f)
+            "dpad" -> place(c, xl, 0.58f, minOf(col * 0.94f, areaH * 0.42f))
+            // A up and right, B down and left, like the handheld.
+            "a" -> place(c, xr + col * 0.23f / areaW, 0.5f, face)
+            "b" -> place(c, xr - col * 0.23f / areaW, 0.68f, face)
+            "select" -> place(c, xl, 0.92f, col * 0.62f)
+            "start" -> place(c, xr, 0.92f, col * 0.62f)
         }
         return list
     }
