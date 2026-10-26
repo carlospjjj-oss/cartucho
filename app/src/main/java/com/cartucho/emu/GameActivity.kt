@@ -7,9 +7,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.opengl.GLSurfaceView
 import android.os.Bundle
-import android.os.ParcelFileDescriptor
 import android.os.Process
-import android.system.Os
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
@@ -47,7 +45,6 @@ class GameActivity : AppCompatActivity() {
     private lateinit var editPanel: LinearLayout
     private lateinit var gamepad: GamepadInput
 
-    private var romFd: ParcelFileDescriptor? = null
     private lateinit var stateDir: File
 
     @Volatile private var loaded = false
@@ -163,28 +160,24 @@ class GameActivity : AppCompatActivity() {
 
     /** Opens the ROM, loads the core and passes everything native needs. */
     private fun prepare(): String? {
-        val uri = Uri.parse(game.uri)
-        val fd = try {
-            contentResolver.openFileDescriptor(uri, "r")
-        } catch (e: Exception) {
-            null
-        } ?: return "Não foi possível abrir ${game.fileName}. A pasta ainda existe?"
-        romFd = fd
-
-        // Cores open the game by path and look at its extension. A symlink
-        // named like the game, pointing at our open descriptor, gives them
-        // both without copying a multi-gigabyte 3DS file.
-        val romDir = File(cacheDir, "rom").apply { deleteRecursively(); mkdirs() }
-        val link = File(romDir, game.fileName.replace('/', '_'))
-        val fdPath = "/proc/self/fd/${fd.fd}"
-        val romPath = try {
-            Os.symlink(fdPath, link.path)
-            link.path
-        } catch (e: Exception) {
-            if (game.size in 1 until 128L * 1024 * 1024) {
-                contentResolver.openInputStream(uri)?.use { input -> link.outputStream().use { input.copyTo(it) } }
-                link.path
-            } else fdPath
+        val romPath = if (game.system == GameSystem.N3DS) {
+            Storage.directPath(this, game)
+                ?: return "Não foi possível abrir ${game.fileName} direto da pasta. " +
+                    "Libere \"Acesso a todos os arquivos\" para o Cartucho e deixe o jogo na " +
+                    "memória interna ou no cartão SD."
+        } else {
+            // Small: copy to the cache, named like the game (the core looks at
+            // the extension).
+            val romDir = File(cacheDir, "rom").apply { deleteRecursively(); mkdirs() }
+            val copy = File(romDir, game.fileName.replace('/', '_'))
+            try {
+                contentResolver.openInputStream(Uri.parse(game.uri))?.use { input ->
+                    copy.outputStream().use { input.copyTo(it) }
+                } ?: return "Não foi possível abrir ${game.fileName}."
+            } catch (e: Exception) {
+                return "Não foi possível abrir ${game.fileName}. A pasta ainda existe?"
+            }
+            copy.path
         }
 
         val systemDir = File(filesDir, "system").apply { mkdirs() }

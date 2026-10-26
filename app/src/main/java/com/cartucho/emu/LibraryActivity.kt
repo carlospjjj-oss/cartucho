@@ -205,8 +205,46 @@ class LibraryActivity : AppCompatActivity() {
     }
 
     private fun launch(game: Game) {
+        if (game.system == GameSystem.N3DS && Storage.directPath(this, game) == null) {
+            ask3dsFileAccess(game)
+            return
+        }
         store.markPlayed(game)
         startActivity(GameActivity.intent(this, game))
+    }
+
+    private val legacyStoragePermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    /** 3DS games are opened in place; that needs broad file access once. */
+    private fun ask3dsFileAccess(game: Game) {
+        if (Storage.realPath(game.uri) == null) {
+            MaterialAlertDialogBuilder(this)
+                .setTitle(game.title)
+                .setMessage("Jogos de 3DS precisam estar na memória interna ou no cartão SD " +
+                    "(não em Google Drive ou outros apps). Mova o jogo e adicione a pasta de novo.")
+                .setPositiveButton(R.string.ok, null)
+                .show()
+            return
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Permitir acesso aos jogos de 3DS")
+            .setMessage("Jogos de 3DS têm vários GB, então o Cartucho abre direto da pasta em " +
+                "vez de copiar. Para isso o Android pede a permissão \"Acesso a todos os " +
+                "arquivos\". Ative na próxima tela e volte para o app.")
+            .setPositiveButton("Abrir configuração") { _, _ ->
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    try {
+                        startActivity(Storage.allFilesAccessIntent(this))
+                    } catch (e: Exception) {
+                        startActivity(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                    }
+                } else {
+                    legacyStoragePermission.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun showFolders() {
