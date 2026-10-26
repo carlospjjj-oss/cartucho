@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Mesa (offscreen GLES)
-        run: sudo apt-get update -q && sudo apt-get install -y -q libegl-dev libgles-dev libegl-mesa0 libgl1-mesa-dri > /dev/null
+        run: sudo apt-get update -q && sudo apt-get install -y -q libegl-dev libgles-dev libegl-mesa0 libgl1-mesa-dri gdb > /dev/null
       - name: Build and run
         run: .github/scripts/logged.sh "native tests" tools/host-test/run.sh
 
