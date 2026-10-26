@@ -68,10 +68,7 @@ class GameActivity : AppCompatActivity() {
         )
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        WindowInsetsControllerCompat(window, window.decorView).apply {
-            hide(WindowInsetsCompat.Type.systemBars())
-            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        }
+        hideSystemBars()
 
         buildViews()
         gamepad = GamepadInput(onChange = ::pushInput, onMenu = ::showMenu)
@@ -229,8 +226,22 @@ class GameActivity : AppCompatActivity() {
         overlay.configure(game.system, landscape)
     }
 
+    private fun hideSystemBars() {
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // Dialogs and rotation can bring the bars back.
+        if (hasFocus) hideSystemBars()
+    }
+
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        hideSystemBars()
         overlay.configure(game.system, landscape)
         if (loaded) {
             applyCoreOptions()
@@ -321,7 +332,9 @@ class GameActivity : AppCompatActivity() {
                 val message = NativeBridge.takeMessage()
                 val fps = NativeBridge.measuredFps()
                 val shutdown = NativeBridge.shutdownRequested()
+                val vp = NativeBridge.viewport()
                 runOnUiThread {
+                    overlay.setGameRect(android.graphics.Rect(vp[0], vp[1], vp[0] + vp[2], vp[1] + vp[3]))
                     if (shutdown) quit()
                     if (message != null) showMessage(message)
                     updateOsd(fps)

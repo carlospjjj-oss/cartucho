@@ -92,13 +92,70 @@ class ControllerOverlay(context: Context) : View(context) {
     private var dragOffsetX = 0f
     private var dragOffsetY = 0f
 
+    // Screen areas to keep clear of: camera cutout / rounded corners.
+    private var insetL = 0
+    private var insetT = 0
+    private var insetR = 0
+    private var insetB = 0
+    // Where the game picture is, to fit the controls beside it.
+    private var gameRect: android.graphics.Rect? = null
+    // The player arranged this layout themselves; never move it for them.
+    private var customLayout = false
+
     fun configure(system: GameSystem, landscape: Boolean) {
         this.system = system
         this.landscape = landscape
-        controls = defaults(system, landscape)
+        gameRect = null
+        applyDefaults()
         loadLayout()
         releaseAll()
         invalidate()
+    }
+
+    private fun applyDefaults() {
+        controls = fitBesidePicture(defaults(system, landscape))
+    }
+
+    override fun onApplyWindowInsets(insets: android.view.WindowInsets): android.view.WindowInsets {
+        val margin = (8 * density).toInt()
+        val cut = insets.displayCutout
+        insetL = (cut?.safeInsetLeft ?: 0) + margin
+        insetT = (cut?.safeInsetTop ?: 0) + margin
+        insetR = (cut?.safeInsetRight ?: 0) + margin
+        insetB = (cut?.safeInsetBottom ?: 0) + margin
+        invalidate()
+        return super.onApplyWindowInsets(insets)
+    }
+
+    /**
+     * Tells the overlay where the game picture is. With the phone sideways the
+     * default controls move into the free columns beside the picture, so they
+     * do not cover the game, when those columns are wide enough.
+     */
+    fun setGameRect(rect: android.graphics.Rect) {
+        if (rect == gameRect || rect.isEmpty) return
+        gameRect = android.graphics.Rect(rect)
+        if (!customLayout && !editMode) {
+            applyDefaults()
+            releaseAll()
+            invalidate()
+        }
+    }
+
+    private fun fitBesidePicture(list: List<Control>): List<Control> {
+        val r = gameRect ?: return list
+        if (!landscape || width == 0) return list
+        val areaW = (width - insetL - insetR).toFloat()
+        val leftFrac = (r.left - insetL) / areaW
+        val rightFrac = ((insetL + areaW) - r.right) / areaW
+        // Need room for a D-pad (~140 dp) on each side.
+        if (minOf(leftFrac, rightFrac) * areaW < 120 * density) return list
+        for (c in list) {
+            if (c.kind == Kind.MENU || c.kind == Kind.FAST_FORWARD) continue
+            c.x = if (c.x < 0.5f) minOf(c.x / 0.3f, 0.8f) * leftFrac
+                  else 1f - minOf((1f - c.x) / 0.3f, 0.8f) * rightFrac
+        }
+        return list
     }
 
     // --- Layout persistence -----------------------------------------------
@@ -106,7 +163,9 @@ class ControllerOverlay(context: Context) : View(context) {
     private fun layoutKey() = "layout_${system.name}_${if (landscape) "land" else "port"}"
 
     private fun loadLayout() {
+        customLayout = false
         val json = Prefs.raw(context).getString(layoutKey(), null) ?: return
+        customLayout = true
         runCatching {
             val o = JSONObject(json)
             for (c in controls) {
@@ -131,6 +190,7 @@ class ControllerOverlay(context: Context) : View(context) {
         if (!on) {
             selected = null
             saveLayout()
+            customLayout = true
         }
         onSelectionChanged?.invoke(selected)
         invalidate()
@@ -144,7 +204,8 @@ class ControllerOverlay(context: Context) : View(context) {
 
     fun resetLayout() {
         Prefs.raw(context).edit().remove(layoutKey()).apply()
-        controls = defaults(system, landscape)
+        customLayout = false
+        applyDefaults()
         selected = null
         onSelectionChanged?.invoke(null)
         invalidate()
@@ -154,8 +215,11 @@ class ControllerOverlay(context: Context) : View(context) {
 
     private fun halfW(c: Control) = c.widthDp * density * globalScale * c.scale / 2f
     private fun halfH(c: Control) = c.heightDp * density * globalScale * c.scale / 2f
-    private fun cx(c: Control) = c.x * width
-    private fun cy(c: Control) = c.y * height
+    // Positions are fractions of the safe area (the view minus insets).
+    private fun cx(c: Control) = insetL + c.x * (width - insetL - insetR)
+    private fun cy(c: Control) = insetT + c.y * (height - insetT - insetB)
+    private fun fracX(px: Float) = (px - insetL) / (width - insetL - insetR).coerceAtLeast(1)
+    private fun fracY(py: Float) = (py - insetT) / (height - insetT - insetB).coerceAtLeast(1)
 
     private fun hit(c: Control, x: Float, y: Float, slack: Float = 1.15f): Boolean {
         val dx = x - cx(c)
@@ -399,8 +463,8 @@ class ControllerOverlay(context: Context) : View(context) {
                 onSelectionChanged?.invoke(selected)
             }
             MotionEvent.ACTION_MOVE -> selected?.let {
-                it.x = ((x - dragOffsetX) / width).coerceIn(0.02f, 0.98f)
-                it.y = ((y - dragOffsetY) / height).coerceIn(0.02f, 0.98f)
+                it.x = fracX(x - dragOffsetX).coerceIn(0f, 1f)
+                it.y = fracY(y - dragOffsetY).coerceIn(0f, 1f)
             }
         }
         invalidate()
