@@ -19,12 +19,13 @@ $CXX host_test.cpp $SRC/core_host.cpp -ldl -o "$OUT/host_test"
 
 "$OUT/pacer_test"
 "$OUT/resampler_test"
-# Under gdb when available, so a crash in the GL driver comes with a stack.
-if command -v gdb > /dev/null; then
-    EGL_PLATFORM=surfaceless gdb -q -batch -return-child-result -ex run -ex bt \
-        --args "$OUT/gl_test" "$OUT/fake_hw_core.so"
-else
-    EGL_PLATFORM=surfaceless "$OUT/gl_test" "$OUT/fake_hw_core.so"
+# If the GLES test crashes, run it again under gdb for a stack trace.
+if ! EGL_PLATFORM=surfaceless "$OUT/gl_test" "$OUT/fake_hw_core.so"; then
+    if command -v gdb > /dev/null; then
+        EGL_PLATFORM=surfaceless gdb -q -batch -ex run -ex bt \
+            --args "$OUT/gl_test" "$OUT/fake_hw_core.so" || true
+    fi
+    exit 1
 fi
 if [ $# -ge 2 ]; then
     "$OUT/host_test" "$1" "$2" "$OUT/frame.ppm" 400 2>/dev/null
