@@ -27,6 +27,7 @@ jobs:
     name: Core GBA (VBA-M)
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/cache@v4
         id: cache
         with:
@@ -45,14 +46,15 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           NDK="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
-          cmake -S vbam -B build -G Ninja \
+          L=.github/scripts/logged.sh
+          $L "vbam configure" cmake -S vbam -B build -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28 -DANDROID_STL=c++_static \
             -DCMAKE_BUILD_TYPE=Release \
             -DENABLE_LIBRETRO=ON -DENABLE_QT=OFF -DENABLE_WX=OFF -DENABLE_SDL=OFF \
             -DBUILD_TESTING=OFF -DENABLE_VULKAN=OFF -DENABLE_LUA=OFF -DENABLE_FFMPEG=OFF \
             -DENABLE_LINK=OFF -DENABLE_NLS=OFF
-          cmake --build build --target vbam_libretro -j "$(nproc)"
+          $L "vbam build" cmake --build build --target vbam_libretro -j "$(nproc)"
           mkdir -p out
           cp "$(find build -name 'vbam_libretro*.so' | head -1)" out/libvbam_libretro.so
           "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" -s out/libvbam_libretro.so
@@ -65,6 +67,7 @@ jobs:
     name: Core 3DS (Azahar)
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/cache@v4
         id: cache
         with:
@@ -86,12 +89,13 @@ jobs:
         run: |
           NDK="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           CMAKE="$ANDROID_SDK_ROOT/cmake/3.30.3/bin/cmake"
+          L=$PWD/.github/scripts/logged.sh
           cd azahar
-          "$CMAKE" -DENABLE_LIBRETRO=ON -DANDROID_PLATFORM=android-28 \
+          $L "azahar configure" "$CMAKE" -DENABLE_LIBRETRO=ON -DANDROID_PLATFORM=android-28 \
             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
             -DANDROID_STL=c++_static -DANDROID_ABI=arm64-v8a -DCMAKE_BUILD_TYPE=Release \
             . -B build
-          "$CMAKE" --build build --target azahar_libretro --config Release -j "$(nproc)"
+          $L "azahar build" "$CMAKE" --build build --target azahar_libretro --config Release -j "$(nproc)"
           mkdir -p ../out
           cp "$(find build -name 'azahar_libretro*.so' | head -1)" ../out/libazahar_libretro.so
           "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" -s ../out/libazahar_libretro.so
@@ -106,9 +110,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Mesa (offscreen GLES)
-        run: sudo apt-get update -q && sudo apt-get install -y -q libegl-dev libgles-dev libegl-mesa0 > /dev/null
+        run: sudo apt-get update -q && sudo apt-get install -y -q libegl-dev libgles-dev libegl-mesa0 libgl1-mesa-dri > /dev/null
       - name: Build and run
-        run: tools/host-test/run.sh
+        run: .github/scripts/logged.sh "native tests" tools/host-test/run.sh
 
   # Compiles the app (Kotlin + native frontend) without the cores, so
   # mistakes show up in minutes instead of after the long 3DS build.
@@ -129,7 +133,7 @@ jobs:
       - name: Build without cores
         env:
           CARTUCHO_NDK_VERSION: ${{ env.NDK_VERSION }}
-        run: gradle --no-daemon assembleDebug
+        run: .github/scripts/logged.sh "app build" gradle --no-daemon assembleDebug
 
   apk:
     name: APK
@@ -156,7 +160,7 @@ jobs:
           CARTUCHO_NDK_VERSION: ${{ env.NDK_VERSION }}
         run: |
           ls -la app/src/main/jniLibs/arm64-v8a
-          gradle --no-daemon assembleRelease
+          .github/scripts/logged.sh "apk build" gradle --no-daemon assembleRelease
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk "dist/Cartucho-${{ github.run_number }}.apk"
       - uses: actions/upload-artifact@v4
