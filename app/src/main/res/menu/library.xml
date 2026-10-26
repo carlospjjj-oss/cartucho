@@ -11,6 +11,8 @@
         app:showAsAction="never" />
     <item android:id="@+id/action_folders" android:title="@string/folders"
         app:showAsAction="never" />
+    <item android:id="@+id/action_refresh_covers" android:title="Atualizar capas"
+        app:showAsAction="never" />
     <item android:id="@+id/action_rescan" android:title="@string/rescan"
         app:showAsAction="never" />
 </menu>

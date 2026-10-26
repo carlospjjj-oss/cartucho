@@ -71,6 +71,12 @@ class LibraryActivity : AppCompatActivity() {
                 R.id.action_open_file -> pickFile.launch(arrayOf("*/*"))
                 R.id.action_folders -> showFolders()
                 R.id.action_rescan -> rescan()
+                R.id.action_refresh_covers -> {
+                    io.execute {
+                        covers.refresh()
+                        runOnUiThread { adapter.notifyDataSetChanged() }
+                    }
+                }
             }
             true
         }
@@ -274,15 +280,39 @@ class LibraryActivity : AppCompatActivity() {
             .show()
     }
 
+    private var coverFor: Game? = null
+    private val pickCover = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val game = coverFor ?: return@registerForActivityResult
+        uri ?: return@registerForActivityResult
+        io.execute {
+            val ok = covers.setCustom(game, uri)
+            runOnUiThread {
+                if (!ok) Snackbar.make(grid, "Não foi possível usar essa imagem.", Snackbar.LENGTH_LONG).show()
+                adapter.notifyDataSetChanged()
+            }
+        }
+    }
+
     private fun showGameMenu(game: Game) {
         val fav = store.isFavorite(game)
-        MaterialAlertDialogBuilder(this)
-            .setTitle(game.title)
-            .setItems(arrayOf(getString(if (fav) R.string.unfavorite else R.string.favorite))) { _, _ ->
+        val actions = mutableListOf<Pair<String, () -> Unit>>(
+            getString(if (fav) R.string.unfavorite else R.string.favorite) to {
                 store.setFavorite(game, !fav)
                 applyFilter()
                 adapter.notifyDataSetChanged()
-            }
+            },
+            "Escolher capa da galeria" to {
+                coverFor = game
+                pickCover.launch(arrayOf("image/*"))
+            },
+        )
+        if (covers.hasCustom(game)) actions += "Remover capa escolhida" to {
+            covers.removeCustom(game)
+            adapter.notifyDataSetChanged()
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(game.title)
+            .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second() }
             .show()
     }
 

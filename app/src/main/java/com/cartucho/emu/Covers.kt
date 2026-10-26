@@ -3,10 +3,12 @@ package com.cartucho.emu
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.LruCache
 import android.widget.ImageView
+import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -14,19 +16,26 @@ import java.net.URLEncoder
 import java.util.concurrent.Executors
 
 /**
- * Box art for the library, looked up by file name in the libretro thumbnail
- * collection (which uses No-Intro names, the usual naming of game dumps).
- * Downloaded once and kept on disk; misses are remembered for a week so a
- * game without art does not hit the network on every launch.
+ * Box art for the library.
+ *
+ * - A cover the player picked for a game always wins.
+ * - Otherwise the libretro thumbnail collection is searched. Its names follow
+ *   No-Intro ("Pokemon - FireRed Version (USA, Europe)"); files named
+ *   differently ("Pokemon Fire Red (PT-BR).gba") are matched by similarity
+ *   against the collection's list of names, fetched once per console.
+ * - Downloads are kept on disk; a game with no match is retried after a few
+ *   days, or right away after "Atualizar capas" (refresh()).
  */
-class Covers(context: Context) {
-    private val dir = File(context.cacheDir, "covers").apply { mkdirs() }
+class Covers(private val context: Context) {
+    private val dir = File(context.cacheDir, "covers2").apply { mkdirs() }
+    private val customDir = File(context.filesDir, "covers_custom").apply { mkdirs() }
     private val memory = object : LruCache<String, Bitmap>(24 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
     private val pool = Executors.newFixedThreadPool(3)
     private val main = Handler(Looper.getMainLooper())
     private val prefs = Prefs(context)
+    private val indexes = HashMap<String, List<String>>()
 
     fun load(game: Game, into: ImageView, onResult: (Boolean) -> Unit) {
         val key = key(game)
@@ -39,7 +48,7 @@ class Covers(context: Context) {
         into.setImageDrawable(null)
         onResult(false)
         pool.execute {
-            val bmp = fetch(game, key)
+            val bmp = try { fetch(game, key) } catch (e: Exception) { null }
             main.post {
                 if (into.tag != key) return@post  // view recycled for another game
                 if (bmp != null) {
@@ -51,43 +60,138 @@ class Covers(context: Context) {
         }
     }
 
+    /** Uses an image the player picked as this game's cover. */
+    fun setCustom(game: Game, image: Uri): Boolean = try {
+        context.contentResolver.openInputStream(image)?.use { input ->
+            customFile(game).outputStream().use { input.copyTo(it) }
+        }
+        memory.remove(key(game))
+        decode(customFile(game)) != null
+    } catch (e: Exception) {
+        false
+    }
+
+    fun hasCustom(game: Game) = customFile(game).exists()
+
+    fun removeCustom(game: Game) {
+        customFile(game).delete()
+        memory.remove(key(game))
+    }
+
+    /** Forgets misses and the name lists so every game without art is tried again. */
+    fun refresh() {
+        dir.listFiles()?.forEach { if (it.name.endsWith(".none") || it.name.startsWith("index_")) it.delete() }
+        synchronized(indexes) { indexes.clear() }
+        memory.evictAll()
+    }
+
     private fun key(game: Game) = game.system.name + "/" + sanitize(game.fileName.substringBeforeLast('.'))
+    private fun customFile(game: Game) = File(customDir, key(game).replace('/', '_') + ".img")
 
     private fun fetch(game: Game, key: String): Bitmap? {
+        customFile(game).takeIf { it.exists() }?.let { return decode(it) }
         val file = File(dir, key.replace('/', '_') + ".png")
         val miss = File(file.path + ".none")
         if (file.exists()) return decode(file)
         if (!prefs.downloadCovers) return null
-        if (miss.exists() && System.currentTimeMillis() - miss.lastModified() < 7L * 24 * 3600 * 1000) return null
-        for (folder in remoteFolders(game)) {
-            val name = sanitize(game.fileName.substringBeforeLast('.'))
-            val url = "https://thumbnails.libretro.com/" + enc(folder) + "/Named_Boxarts/" + enc(name) + ".png"
-            try {
-                val conn = URL(url).openConnection() as HttpURLConnection
-                conn.connectTimeout = 8000
-                conn.readTimeout = 15000
-                if (conn.responseCode == 200) {
-                    val tmp = File(file.path + ".tmp")
-                    conn.inputStream.use { input -> tmp.outputStream().use { input.copyTo(it) } }
-                    tmp.renameTo(file)
-                    return decode(file)
-                }
-                conn.disconnect()
-            } catch (e: Exception) {
-                return null  // offline: try again next time, don't record a miss
+        if (miss.exists() && System.currentTimeMillis() - miss.lastModified() < 3L * 24 * 3600 * 1000) return null
+
+        var offline = false
+        for (repo in repos(game)) {
+            val names = index(repo)
+            if (names == null) {
+                offline = true
+                continue
             }
+            val name = bestMatch(game.fileName, names) ?: continue
+            if (download(repo, name, file)) return decode(file)
         }
-        miss.writeText("")
+        if (!offline) miss.writeText("")
         return null
     }
 
-    private fun remoteFolders(game: Game): List<String> = when (game.system) {
-        GameSystem.GBA -> listOf("Nintendo - Game Boy Advance")
+    /** Names (without .png) in the collection's Named_Boxarts, cached for a month. */
+    private fun index(repo: String): List<String>? {
+        synchronized(indexes) {
+            indexes[repo]?.let { return it }
+            val cache = File(dir, "index_$repo.txt")
+            if (cache.exists() && System.currentTimeMillis() - cache.lastModified() < 30L * 24 * 3600 * 1000) {
+                val names = cache.readLines().filter { it.isNotEmpty() }
+                indexes[repo] = names
+                return names
+            }
+            return try {
+                // Root tree -> the Named_Boxarts subtree (one level, a few
+                // thousand entries) through GitHub's public API.
+                val root = JSONObject(get("https://api.github.com/repos/libretro-thumbnails/$repo/git/trees/master"))
+                val tree = root.getJSONArray("tree")
+                var sha: String? = null
+                for (i in 0 until tree.length()) {
+                    val e = tree.getJSONObject(i)
+                    if (e.getString("path") == "Named_Boxarts") sha = e.getString("sha")
+                }
+                val names = mutableListOf<String>()
+                if (sha != null) {
+                    val sub = JSONObject(get("https://api.github.com/repos/libretro-thumbnails/$repo/git/trees/$sha"))
+                        .getJSONArray("tree")
+                    for (i in 0 until sub.length()) {
+                        val p = sub.getJSONObject(i).getString("path")
+                        if (p.endsWith(".png")) names += p.removeSuffix(".png")
+                    }
+                }
+                cache.writeText(names.joinToString("\n"))
+                indexes[repo] = names
+                names
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    private fun download(repo: String, name: String, file: File): Boolean {
+        val urls = listOf(
+            "https://raw.githubusercontent.com/libretro-thumbnails/$repo/master/Named_Boxarts/${enc(name)}.png",
+            "https://thumbnails.libretro.com/${enc(repo.replace('_', ' '))}/Named_Boxarts/${enc(name)}.png",
+        )
+        for (url in urls) {
+            try {
+                val conn = URL(url).openConnection() as HttpURLConnection
+                conn.connectTimeout = 8000
+                conn.readTimeout = 20000
+                conn.instanceFollowRedirects = true
+                if (conn.responseCode == 200) {
+                    val tmp = File(file.path + ".tmp")
+                    conn.inputStream.use { input -> tmp.outputStream().use { input.copyTo(it) } }
+                    if (tmp.length() > 0 && tmp.renameTo(file)) return true
+                }
+                conn.disconnect()
+            } catch (e: Exception) {
+            }
+        }
+        return false
+    }
+
+    private fun get(url: String): String {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        conn.connectTimeout = 8000
+        conn.readTimeout = 20000
+        conn.setRequestProperty("Accept", "application/vnd.github+json")
+        conn.setRequestProperty("User-Agent", "Cartucho")
+        try {
+            if (conn.responseCode != 200) throw IllegalStateException("HTTP ${conn.responseCode}")
+            return conn.inputStream.bufferedReader().use { it.readText() }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    private fun repos(game: Game): List<String> = when (game.system) {
+        GameSystem.GBA -> listOf("Nintendo_-_Game_Boy_Advance")
         GameSystem.GB -> if (game.fileName.endsWith(".gbc", true))
-            listOf("Nintendo - Game Boy Color", "Nintendo - Game Boy")
-        else listOf("Nintendo - Game Boy", "Nintendo - Game Boy Color")
-        GameSystem.NDS -> listOf("Nintendo - Nintendo DS")
-        GameSystem.N3DS -> listOf("Nintendo - Nintendo 3DS")
+            listOf("Nintendo_-_Game_Boy_Color", "Nintendo_-_Game_Boy")
+        else listOf("Nintendo_-_Game_Boy", "Nintendo_-_Game_Boy_Color")
+        GameSystem.NDS -> listOf("Nintendo_-_Nintendo_DS")
+        GameSystem.N3DS -> listOf("Nintendo_-_Nintendo_3DS")
     }
 
     private fun decode(file: File): Bitmap? {
@@ -103,5 +207,65 @@ class Covers(context: Context) {
     companion object {
         /** The thumbnail collection replaces these characters with '_'. */
         fun sanitize(name: String) = name.replace(Regex("[&*/:`<>?\\\\|\"]"), "_")
+
+        private val STOP = setOf("the", "version", "a", "of", "and", "ver")
+
+        /** Words of a title without tags, punctuation and filler words. */
+        fun tokens(name: String): List<String> {
+            var s = name.replace(Regex("\\.[A-Za-z0-9]{2,4}$"), "")
+            s = s.replace(Regex("[\\(\\[][^\\)\\]]*[\\)\\]]"), " ").lowercase()
+                .replace("&", " and ").replace("'", "")
+            return s.split(Regex("[^a-z0-9]+")).filter { it.isNotEmpty() && it !in STOP }
+        }
+
+        private fun rank(name: String): Triple<Int, Int, Int> {
+            val n = name.lowercase()
+            val bad = listOf("(beta", "(proto", "(kiosk", "(demo", "(sample", "(alternate", "hack]", "(hack")
+                .any { it in n }
+            val region = when {
+                "(usa" in n -> 0
+                "europe" in n -> 1
+                "brazil" in n -> 2
+                else -> 3
+            }
+            return Triple(if (bad) 1 else 0, region, name.length)
+        }
+
+        /**
+         * The collection name for a game file: the same name when present,
+         * else the most similar one (same words in any spacing, or every word
+         * of the file found in the name), preferring regular USA/Europe
+         * releases. Null when nothing is close enough.
+         */
+        fun bestMatch(fileName: String, names: List<String>): String? {
+            val exact = sanitize(fileName.substringBeforeLast('.'))
+            if (exact in names) return exact
+            val gt = tokens(fileName)
+            if (gt.isEmpty()) return null
+            val gc = gt.joinToString("")
+            val gset = gt.toSet()
+            var best: String? = null
+            var bestScore = 0
+            for (n in names) {
+                val ct = tokens(n)
+                if (ct.isEmpty()) continue
+                val cc = ct.joinToString("")
+                val cset = ct.toSet()
+                val score = when {
+                    cc == gc -> 100
+                    gt.size >= 2 && cset.containsAll(gset) -> 90 - (cset.size - gset.size) * 2
+                    gt.size >= 2 && gc in cc && cc.startsWith(gt[0]) -> 85 - (cc.length - gc.length) / 4
+                    else -> (100 * (gset intersect cset).size) / (gset union cset).size
+                }
+                if (score < 80) continue
+                val better = best == null || score > bestScore ||
+                    (score == bestScore && compareValuesBy(rank(n), rank(best!!), { it.first }, { it.second }, { it.third }) < 0)
+                if (better) {
+                    best = n
+                    bestScore = score
+                }
+            }
+            return best
+        }
     }
 }
