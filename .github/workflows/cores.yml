@@ -29,7 +29,7 @@ jobs:
         id: cache
         with:
           path: out/libvbam_libretro.so
-          key: vbam-android-arm64-${{ env.VBAM_SHA }}-v1
+          key: vbam-android-arm64-${{ env.VBAM_SHA }}-v2
       - name: Install NDK
         if: steps.cache.outputs.cache-hit != 'true'
         run: echo "y" | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" > /dev/null
@@ -39,6 +39,7 @@ jobs:
           git init -q vbam && cd vbam
           git remote add origin "https://github.com/$VBAM_REPO.git"
           git fetch -q --depth 1 origin "$VBAM_SHA" && git checkout -q FETCH_HEAD
+          git apply ../.github/patches/vbam-libretro-android.patch
       - name: Build
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
@@ -88,7 +89,9 @@ jobs:
           CMAKE="$ANDROID_SDK_ROOT/cmake/3.30.3/bin/cmake"
           L=$PWD/.github/scripts/logged.sh
           cd azahar
-          $L "azahar configure" "$CMAKE" -DENABLE_LIBRETRO=ON -DANDROID_PLATFORM=android-28 \
+          # API 21 like upstream's own libretro CI: bionic only declares the
+          # GNU strerror_r from API 23, which the core's error.cpp rejects.
+          $L "azahar configure" "$CMAKE" -DENABLE_LIBRETRO=ON -DANDROID_PLATFORM=android-21 \
             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
             -DANDROID_STL=c++_static -DANDROID_ABI=arm64-v8a -DCMAKE_BUILD_TYPE=Release \
             . -B build

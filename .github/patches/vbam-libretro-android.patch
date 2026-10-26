@@ -1,0 +1,16 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 5f5b464..918d419 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -670,8 +670,10 @@ if(NOT TRANSLATIONS_ONLY)
+     # deliverable is the wxQt app, so skip them there.
+     if(NOT ANDROID)
+         add_subdirectory(src/sdl)
+-        add_subdirectory(src/libretro)
+     endif()
++    # Cartucho: build the libretro core on Android too (it only builds when
++    # ENABLE_LIBRETRO is on).
++    add_subdirectory(src/libretro)
+ endif()
+ 
+ add_subdirectory(src/wx)
