@@ -97,9 +97,10 @@ int main(int argc, char** argv) {
     size_t distinct = 0;
     uint32_t first = 0;
     std::memcpy(&first, f.rgba.data(), 4);
+    first &= 0x00ffffff;  // colour only
     for (size_t i = 0; i < f.rgba.size(); i += 4) {
-        uint32_t px;
-        std::memcpy(&px, &f.rgba[i], 4);
+        uint32_t px = 0;
+        std::memcpy(&px, &f.rgba[i], 3);
         distinct += px != first;
     }
     CHECK(distinct > f.rgba.size() / 4 / 100, "picture is not blank (%zu differing pixels)",

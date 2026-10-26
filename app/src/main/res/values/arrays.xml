@@ -45,6 +45,6 @@
         <item>Só a tela de baixo</item>
     </string-array>
     <string-array name="nds_layout_values">
-        <item>auto</item><item>top-bottom</item><item>left-right</item><item>hybrid-top</item><item>hybrid-bottom</item><item>top</item><item>bottom</item>
+        <item>auto</item><item>top-bottom</item><item>left-right</item><item>largescreen-top</item><item>largescreen-bottom</item><item>top</item><item>bottom</item>
     </string-array>
 </resources>

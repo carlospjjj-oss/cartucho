@@ -225,7 +225,7 @@ class GameActivity : AppCompatActivity() {
             NativeBridge.setOption("melonds_show_bios_warnings", "disabled")
             NativeBridge.setOption("melonds_number_of_screen_layouts", "1")
             val layout = prefs.ndsLayout.let {
-                if (it == "auto") (if (landscape) "hybrid-top" else "top-bottom") else it
+                if (it == "auto") (if (landscape) "left-right" else "top-bottom") else it
             }
             NativeBridge.setOption("melonds_screen_layout1", layout)
             return
