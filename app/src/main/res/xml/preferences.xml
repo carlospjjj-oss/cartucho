@@ -147,5 +147,11 @@
             app:title="Baixar capas dos jogos"
             app:summary="Busca a capa pelo nome do arquivo (precisa de internet)"
             app:defaultValue="true" />
+        <EditTextPreference
+            app:key="covers_repo"
+            app:title="Meu repositório de capas"
+            app:dialogTitle="Repositório de capas"
+            app:dialogMessage="Um repositório do GitHub (ex.: seu-usuario/capas) ou o endereço de uma pasta na web. Coloque as imagens em pastas por console com o nome do jogo: GBA/Eclat Pourpre.png, DS/..., 3DS/..., GB/... (PNG ou JPG). Ele é consultado antes do acervo padrão. Depois de mudar, use Atualizar capas na biblioteca."
+            app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>
 </PreferenceScreen>

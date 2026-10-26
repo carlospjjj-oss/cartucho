@@ -32,6 +32,9 @@ class Prefs(context: Context) {
     val rewind: Boolean get() = p.getBoolean("rewind", true)
     val quickButtons: Boolean get() = p.getBoolean("quick_buttons", true)
 
+    /** The player's own cover repository ("user/repo" or a URL); empty for none. */
+    val coversRepo: String get() = p.getString("covers_repo", "")!!
+
     val downloadCovers: Boolean get() = p.getBoolean("download_covers", true)
 
     fun setFilter(value: Int) = p.edit().putString("filter", value.toString()).apply()

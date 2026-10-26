@@ -41,6 +41,21 @@ jobs:
           if ! gh release download cores -p '*.so' -D app/src/main/jniLibs/arm64-v8a; then
             echo "::warning title=No cores yet::Run the 'Build cores' workflow; this APK has no emulators."
           fi
+      - name: Cover name lists
+        # The names of every box art in the libretro thumbnail collection,
+        # packed into the APK so the app matches covers without calling the
+        # (rate-limited) GitHub API. Only the file list is fetched, no images.
+        run: |
+          mkdir -p app/src/main/assets/covers
+          for repo in Nintendo_-_Game_Boy Nintendo_-_Game_Boy_Color Nintendo_-_Game_Boy_Advance \
+                      Nintendo_-_Nintendo_DS Nintendo_-_Nintendo_3DS; do
+            git clone -q --depth 1 --filter=blob:none --no-checkout \
+              "https://github.com/libretro-thumbnails/$repo.git" "thumbs-$repo"
+            # -z: names exactly as stored (no quoting of accents or quotes).
+            git -C "thumbs-$repo" ls-tree -z --name-only HEAD Named_Boxarts/ | tr '\0' '\n' \
+              | sed -n 's|^Named_Boxarts/\(.*\)\.png$|\1|p' > "app/src/main/assets/covers/$repo.txt"
+            echo "$repo: $(wc -l < "app/src/main/assets/covers/$repo.txt") names"
+          done
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

@@ -19,12 +19,17 @@ import java.util.concurrent.Executors
  * Box art for the library.
  *
  * - A cover the player picked for a game always wins.
- * - Otherwise the libretro thumbnail collection is searched. Its names follow
- *   No-Intro ("Pokemon - FireRed Version (USA, Europe)"); files named
- *   differently ("Pokemon Fire Red (PT-BR).gba") are matched by similarity
- *   against the collection's list of names, fetched once per console.
- * - Downloads are kept on disk; a game with no match is retried after a few
- *   days, or right away after "Atualizar capas" (refresh()).
+ * - Then the player's own cover repository, if set (Prefs.coversRepo): a
+ *   GitHub repository ("user/repo") or any web folder holding
+ *   <console>/<game name>.png, e.g. GBA/Eclat Pourpre.png.
+ * - Then the libretro thumbnail collection. Its names follow No-Intro
+ *   ("Pokemon - FireRed Version (USA, Europe)"); files named differently
+ *   ("Pokemon Fire Red (PT-BR).gba") are matched by similarity against the
+ *   collection's list of names, which ships inside the APK (built by CI) so
+ *   no rate-limited API call is needed.
+ * - Downloads are kept on disk. A game with no cover anywhere is retried
+ *   after a few days or after "Atualizar capas" (refresh()); a network error
+ *   is never recorded as "no cover".
  */
 class Covers(private val context: Context) {
     private val dir = File(context.cacheDir, "covers2").apply { mkdirs() }
@@ -97,6 +102,14 @@ class Covers(private val context: Context) {
         if (miss.exists() && System.currentTimeMillis() - miss.lastModified() < 3L * 24 * 3600 * 1000) return null
 
         var offline = false
+        // The player's own repository first.
+        for (url in customUrls(game)) {
+            when (download(url, file)) {
+                Fetch.OK -> return decode(file)
+                Fetch.NETWORK -> offline = true
+                Fetch.MISSING -> {}
+            }
+        }
         for (repo in repos(game)) {
             val names = index(repo)
             if (names == null) {
@@ -104,16 +117,45 @@ class Covers(private val context: Context) {
                 continue
             }
             val name = bestMatch(game.fileName, names) ?: continue
-            if (download(repo, name, file)) return decode(file)
+            for (url in libretroUrls(repo, name)) {
+                when (download(url, file)) {
+                    Fetch.OK -> return decode(file)
+                    Fetch.NETWORK -> offline = true
+                    Fetch.MISSING -> {}
+                }
+            }
         }
         if (!offline) miss.writeText("")
         return null
+    }
+
+    private enum class Fetch { OK, MISSING, NETWORK }
+
+    /** Candidate URLs in the player's cover repository, best first. */
+    private fun customUrls(game: Game): List<String> {
+        val base = customBase(prefs.coversRepo) ?: return emptyList()
+        val names = listOf(game.fileName.substringBeforeLast('.'), game.title).distinct()
+        val folders = listOf(game.system.shortName + "/", "")
+        return folders.flatMap { folder ->
+            names.flatMap { n -> listOf("$base$folder${enc(n)}.png", "$base$folder${enc(n)}.jpg") }
+        }
     }
 
     /** Names (without .png) in the collection's Named_Boxarts, cached for a month. */
     private fun index(repo: String): List<String>? {
         synchronized(indexes) {
             indexes[repo]?.let { return it }
+            // Shipped in the APK (CI writes assets/covers/<repo>.txt).
+            try {
+                val names = context.assets.open("covers/$repo.txt").bufferedReader().use { r ->
+                    r.readLines().filter { it.isNotEmpty() }
+                }
+                if (names.isNotEmpty()) {
+                    indexes[repo] = names
+                    return names
+                }
+            } catch (e: Exception) {
+            }
             val cache = File(dir, "index_$repo.txt")
             if (cache.exists() && System.currentTimeMillis() - cache.lastModified() < 30L * 24 * 3600 * 1000) {
                 val names = cache.readLines().filter { it.isNotEmpty() }
@@ -148,27 +190,47 @@ class Covers(private val context: Context) {
         }
     }
 
-    private fun download(repo: String, name: String, file: File): Boolean {
-        val urls = listOf(
-            "https://raw.githubusercontent.com/libretro-thumbnails/$repo/master/Named_Boxarts/${enc(name)}.png",
-            "https://thumbnails.libretro.com/${enc(repo.replace('_', ' '))}/Named_Boxarts/${enc(name)}.png",
-        )
-        for (url in urls) {
-            try {
+    private fun libretroUrls(repo: String, name: String) = listOf(
+        "https://raw.githubusercontent.com/libretro-thumbnails/$repo/master/Named_Boxarts/${enc(name)}.png",
+        "https://thumbnails.libretro.com/${enc(repo.replace('_', ' '))}/Named_Boxarts/${enc(name)}.png",
+    )
+
+    /** One attempt, retried once on a network error (flaky mobile data). */
+    private fun download(url: String, file: File): Fetch {
+        var result = Fetch.NETWORK
+        for (attempt in 0..1) {
+            result = try {
                 val conn = URL(url).openConnection() as HttpURLConnection
                 conn.connectTimeout = 8000
                 conn.readTimeout = 20000
                 conn.instanceFollowRedirects = true
-                if (conn.responseCode == 200) {
-                    val tmp = File(file.path + ".tmp")
-                    conn.inputStream.use { input -> tmp.outputStream().use { input.copyTo(it) } }
-                    if (tmp.length() > 0 && tmp.renameTo(file)) return true
+                conn.setRequestProperty("User-Agent", "Cartucho")
+                try {
+                    when (conn.responseCode) {
+                        200 -> {
+                            val tmp = File(file.path + ".tmp")
+                            conn.inputStream.use { input -> tmp.outputStream().use { input.copyTo(it) } }
+                            if (tmp.length() > 0 && decodeOk(tmp) && tmp.renameTo(file)) Fetch.OK
+                            else Fetch.MISSING
+                        }
+                        404, 410 -> Fetch.MISSING
+                        else -> Fetch.NETWORK  // 403 rate limit, 5xx...
+                    }
+                } finally {
+                    conn.disconnect()
                 }
-                conn.disconnect()
             } catch (e: Exception) {
+                Fetch.NETWORK
             }
+            if (result != Fetch.NETWORK) return result
         }
-        return false
+        return result
+    }
+
+    private fun decodeOk(f: File): Boolean {
+        val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(f.path, o)
+        return o.outWidth > 0
     }
 
     private fun get(url: String): String {
@@ -205,6 +267,32 @@ class Covers(private val context: Context) {
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
     companion object {
+        /**
+         * Base URL (ending in '/') of the player's cover repository:
+         * "user/repo" or "github.com/user/repo[/tree/branch[/folder]]" for
+         * GitHub, or any http(s) URL of a folder.
+         */
+        fun customBase(setting: String): String? {
+            var s = setting.trim().removeSuffix("/")
+            if (s.isEmpty()) return null
+            if (s.startsWith("http://") || s.startsWith("https://")) {
+                val gh = Regex("^https?://(www\\.)?github\\.com/([^/]+)/([^/]+)(/tree/([^/]+)(/(.*))?)?$").find(s)
+                    ?: return "$s/"
+                s = "github.com/" + gh.groupValues[2] + "/" + gh.groupValues[3] + gh.groupValues[4]
+            }
+            s = s.removePrefix("github.com/")
+            val parts = s.split('/')
+            if (parts.size < 2 || parts[0].isEmpty() || parts[1].isEmpty()) return null
+            // user/repo[/tree/branch[/sub/folder]]
+            var branch = "HEAD"
+            var sub = ""
+            if (parts.size >= 4 && parts[2] == "tree") {
+                branch = parts[3]
+                sub = parts.drop(4).joinToString("/").let { if (it.isEmpty()) "" else "$it/" }
+            }
+            return "https://raw.githubusercontent.com/${parts[0]}/${parts[1].removeSuffix(".git")}/$branch/$sub"
+        }
+
         /** The thumbnail collection replaces these characters with '_'. */
         fun sanitize(name: String) = name.replace(Regex("[&*/:`<>?\\\\|\"]"), "_")
 
