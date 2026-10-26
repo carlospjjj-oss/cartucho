@@ -1,0 +1,164 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 5f5b464..918d419 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -670,8 +670,10 @@ if(NOT TRANSLATIONS_ONLY)
+     # deliverable is the wxQt app, so skip them there.
+     if(NOT ANDROID)
+         add_subdirectory(src/sdl)
+-        add_subdirectory(src/libretro)
+     endif()
++    # Cartucho: build the libretro core on Android too (it only builds when
++    # ENABLE_LIBRETRO is on).
++    add_subdirectory(src/libretro)
+ endif()
+ 
+ add_subdirectory(src/wx)
+diff --git a/src/core/gba/gbaLink.cpp b/src/core/gba/gbaLink.cpp
+index 438dd01..e9571db 100644
+--- a/src/core/gba/gbaLink.cpp
++++ b/src/core/gba/gbaLink.cpp
+@@ -107,6 +107,7 @@ typedef sem_t link_sem_t;
+ #endif  // defined(_WIN32)
+ 
+ #include <cctype>
++#include <cstdarg>
+ #include <cstdio>
+ #include <cstdlib>
+ #include <cstring>
+diff --git a/src/libretro/CMakeLists.txt b/src/libretro/CMakeLists.txt
+index e635941..f23844b 100644
+--- a/src/libretro/CMakeLists.txt
++++ b/src/libretro/CMakeLists.txt
+@@ -96,12 +96,33 @@ target_compile_definitions(vbam_libretro PRIVATE
+     NO_DEBUGGER
+     NO_PNG
+     TILED_RENDERING
+-    NO_LINK
+     AFFINE_BG_UNIFIED
+     FRONTEND_SUPPORTS_RGB565
+     VBAM_VERSION="${VBAM_VERSION}"
+ )
+ 
++# Cartucho: network link (cable / wireless adapter / GB serial over TCP).
++if(ENABLE_LINK)
++    target_sources(vbam_libretro PRIVATE
++        ${VBAM_SRC_DIR}/core/gba/gbaLink.cpp
++        ${VBAM_SRC_DIR}/core/gba/internal/gbaSockClient.cpp
++        cartucho_link.cpp
++    )
++    # The NDK has no libintl.h; elsewhere the system one is needed (libstdc++
++    # includes it too).
++    if(ANDROID)
++        target_include_directories(vbam_libretro PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/compat)
++    endif()
++    target_include_directories(vbam_libretro PRIVATE
++        ${SFML_INCLUDE_DIR}
++        ${SFML_INCLUDE_DIR}/SFML/Network
++        ${SFML_INCLUDE_DIR}/SFML/System
++    )
++    target_link_libraries(vbam_libretro PRIVATE ${SFML_LIBRARIES})
++else()
++    target_compile_definitions(vbam_libretro PRIVATE NO_LINK)
++endif()
++
+ if(COMMITHASH)
+     target_compile_definitions(vbam_libretro PRIVATE
+         GIT_COMMIT="${COMMITHASH}"
+diff --git a/src/libretro/cartucho_link.cpp b/src/libretro/cartucho_link.cpp
+new file mode 100644
+index 0000000..1e19245
+--- /dev/null
++++ b/src/libretro/cartucho_link.cpp
+@@ -0,0 +1,70 @@
++// Cartucho extension: lets the frontend start a network link session (cable,
++// wireless adapter or GB serial over TCP, the same protocol as the desktop
++// VBA-M) in the libretro core. Plain C exports, looked up with dlsym; every
++// call must come from the thread that runs retro_run().
++#include <cstring>
++#include <string>
++
++#include "core/gba/gbaLink.h"
++
++extern "C" {
++
++// mode: 0 = GBA cable, 1 = GBA wireless adapter, 2 = Game Boy cable.
++// players: total, server included (2-4; Game Boy is always 2).
++// host: the server to join (client only). Returns a ConnectionState:
++// 0 connected, 1 error, 2 still connecting (call cartucho_link_poll).
++__attribute__((visibility("default")))
++int cartucho_link_start(int mode, int server, int players, const char* host, int port,
++                        int timeout_ms) {
++    static const LinkMode kModes[] = {LINK_CABLE_SOCKET, LINK_RFU_SOCKET, LINK_GAMEBOY_SOCKET};
++    if (mode < 0 || mode > 2)
++        return LINK_ERROR;
++    if (mode == 2)
++        players = 2;
++    if (players < 2)
++        players = 2;
++    if (players > 4)
++        players = 4;
++    CloseLink();
++    IP_LINK_PORT = static_cast<uint16_t>(port);
++    IP_LINK_BIND_ADDRESS = "*";
++    SetLinkTimeout(timeout_ms);
++    EnableSpeedHacks(false);
++    EnableLinkServer(server != 0, players - 1);
++    if (!server && (!host || !SetLinkServerHost(host)))
++        return LINK_ERROR;
++    return InitLink(kModes[mode]);
++}
++
++// Advances a connection in progress. Writes a status line ("Waiting for
++// clients 1/2...", "Connected as #2"...) into message. Same return values.
++__attribute__((visibility("default")))
++int cartucho_link_poll(char* message, int size) {
++    if (size > 0)
++        message[0] = '\0';
++    return ConnectLinkUpdate(message, static_cast<size_t>(size));
++}
++
++// Once per frame while a session is up: notices dropped peers.
++__attribute__((visibility("default")))
++void cartucho_link_frame() {
++    if (GetLinkMode() != LINK_DISCONNECTED)
++        CheckLinkConnection();
++}
++
++__attribute__((visibility("default")))
++int cartucho_link_active() {
++    return GetLinkMode() != LINK_DISCONNECTED;
++}
++
++__attribute__((visibility("default")))
++int cartucho_link_player_id() {
++    return GetLinkPlayerId();
++}
++
++__attribute__((visibility("default")))
++void cartucho_link_stop() {
++    CloseLink();
++}
++
++}  // extern "C"
+diff --git a/src/libretro/compat/libintl.h b/src/libretro/compat/libintl.h
+new file mode 100644
+index 0000000..c9e4cf7
+--- /dev/null
++++ b/src/libretro/compat/libintl.h
+@@ -0,0 +1,4 @@
++// Cartucho: the libretro core has no gettext; the link code's messages
++// stay in English.
++#pragma once
++#define gettext(x) (x)
+diff --git a/src/libretro/link.T b/src/libretro/link.T
+index 78f657b..c9648ec 100644
+--- a/src/libretro/link.T
++++ b/src/libretro/link.T
+@@ -1,5 +1,4 @@
+ {
+-	global: retro_*;
++	global: retro_*; cartucho_*;
+ 	local: *;
+ };
+-

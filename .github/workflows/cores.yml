@@ -29,7 +29,7 @@ jobs:
         id: cache
         with:
           path: out/libvbam_libretro.so
-          key: vbam-android-arm64-${{ env.VBAM_SHA }}-v2
+          key: vbam-android-arm64-${{ env.VBAM_SHA }}-${{ hashFiles('.github/patches/vbam-cartucho.patch') }}
       - name: Install NDK
         if: steps.cache.outputs.cache-hit != 'true'
         run: echo "y" | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" > /dev/null
@@ -39,7 +39,7 @@ jobs:
           git init -q vbam && cd vbam
           git remote add origin "https://github.com/$VBAM_REPO.git"
           git fetch -q --depth 1 origin "$VBAM_SHA" && git checkout -q FETCH_HEAD
-          git apply ../.github/patches/vbam-libretro-android.patch
+          git apply ../.github/patches/vbam-cartucho.patch
       - name: Build
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
@@ -51,7 +51,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DENABLE_LIBRETRO=ON -DENABLE_QT=OFF -DENABLE_WX=OFF -DENABLE_SDL=OFF \
             -DBUILD_TESTING=OFF -DENABLE_VULKAN=OFF -DENABLE_LUA=OFF -DENABLE_FFMPEG=OFF \
-            -DENABLE_LINK=OFF -DENABLE_NLS=OFF
+            -DENABLE_LINK=ON -DENABLE_NLS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
           $L "vbam build" cmake --build build --target vbam_libretro -j "$(nproc)"
           mkdir -p out
           cp "$(find build -name 'vbam_libretro*.so' | head -1)" out/libvbam_libretro.so

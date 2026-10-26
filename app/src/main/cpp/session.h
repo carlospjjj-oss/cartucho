@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include "core_host.h"
@@ -57,6 +58,15 @@ public:
     // Maps a touch at surface pixel (x, y) to the core's pointer.
     void Touch(float x, float y, bool pressed);
 
+    // --- Network link (patched VBA-M core only) ---------------------------
+    bool link_supported() const;
+    // GL thread. mode: 0 GBA cable, 1 GBA wireless adapter, 2 Game Boy.
+    void LinkStart(int mode, bool server, int players, const std::string& host, int port);
+    void LinkStop();
+    // -1 off, 0 connected, 1 failed, 2 connecting. Any thread.
+    int link_state() const { return link_state_; }
+    std::string link_message();
+
     // Measured emulation speed (frames per second) over the last second.
     double measured_fps() const { return measured_fps_; }
 
@@ -74,6 +84,20 @@ private:
     int fps_window_frames_ = 0;
     double measured_fps_ = 0.0;
     double last_flush_ = 0.0;
+
+    void LinkStep();
+    using LinkStartFn = int (*)(int, int, int, const char*, int, int);
+    using LinkPollFn = int (*)(char*, int);
+    using LinkVoidFn = void (*)();
+    using LinkIntFn = int (*)();
+    LinkStartFn link_start_ = nullptr;
+    LinkPollFn link_poll_ = nullptr;
+    LinkVoidFn link_frame_ = nullptr;
+    LinkVoidFn link_stop_ = nullptr;
+    LinkIntFn link_active_ = nullptr;
+    std::atomic<int> link_state_{-1};
+    std::mutex link_mutex_;
+    std::string link_message_;
 };
 
 }  // namespace cartucho

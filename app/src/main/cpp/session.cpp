@@ -51,7 +51,70 @@ bool Session::Open(const std::string& core_path, const std::string& system_dir,
     host_->SetDirectories(system_dir, save_dir);
     host_->SetHwHooks({[this] { return static_cast<uintptr_t>(presenter_.hw_framebuffer()); },
                        [](const char* sym) { return PlatformGetProcAddress(sym); }});
-    return host_->LoadCore(core_path, error);
+    if (!host_->LoadCore(core_path, error))
+        return false;
+    link_start_ = reinterpret_cast<LinkStartFn>(host_->Symbol("cartucho_link_start"));
+    link_poll_ = reinterpret_cast<LinkPollFn>(host_->Symbol("cartucho_link_poll"));
+    link_frame_ = reinterpret_cast<LinkVoidFn>(host_->Symbol("cartucho_link_frame"));
+    link_stop_ = reinterpret_cast<LinkVoidFn>(host_->Symbol("cartucho_link_stop"));
+    link_active_ = reinterpret_cast<LinkIntFn>(host_->Symbol("cartucho_link_active"));
+    return true;
+}
+
+bool Session::link_supported() const {
+    return link_start_ && link_poll_ && link_frame_ && link_stop_ && link_active_;
+}
+
+std::string Session::link_message() {
+    std::lock_guard<std::mutex> lock(link_mutex_);
+    return link_message_;
+}
+
+void Session::LinkStart(int mode, bool server, int players, const std::string& host, int port) {
+    if (!link_supported()) {
+        link_state_ = 1;
+        std::lock_guard<std::mutex> lock(link_mutex_);
+        link_message_ = "This emulator has no link support";
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(link_mutex_);
+        link_message_.clear();
+    }
+    // A generous timeout: phones on Wi-Fi have jittery latency.
+    link_state_ = link_start_(mode, server ? 1 : 0, players, host.c_str(), port, 2000);
+    if (link_state_ == 1) {
+        std::lock_guard<std::mutex> lock(link_mutex_);
+        link_message_ = server ? "Could not open the port" : "Could not reach the host";
+    }
+}
+
+void Session::LinkStop() {
+    if (link_stop_)
+        link_stop_();
+    link_state_ = -1;
+}
+
+// Render thread, every refresh (also while paused, so connecting proceeds
+// while the game waits).
+void Session::LinkStep() {
+    const int state = link_state_;
+    if (state == 2) {
+        char message[256] = {};
+        const int next = link_poll_(message, sizeof(message));
+        if (message[0]) {
+            std::lock_guard<std::mutex> lock(link_mutex_);
+            link_message_ = message;
+        }
+        link_state_ = next;
+    } else if (state == 0) {
+        link_frame_();
+        if (!link_active_()) {
+            link_state_ = 1;
+            std::lock_guard<std::mutex> lock(link_mutex_);
+            link_message_ = "The other player disconnected";
+        }
+    }
 }
 
 bool Session::OnSurfaceCreated(const std::string& rom, const std::string& save,
@@ -99,6 +162,8 @@ void Session::set_speed(double speed) {
 void Session::Frame(double now) {
     if (reset_pacer_.exchange(false))
         pacer_.Reset();
+    if (link_supported())
+        LinkStep();
     if (loaded_ && !paused_) {
         if (host_->uses_hw_render()) {
             // A hardware core may grow its picture (resolution scale changed

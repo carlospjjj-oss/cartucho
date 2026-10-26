@@ -47,9 +47,10 @@ class GameActivity : AppCompatActivity() {
 
     private lateinit var stateDir: File
 
+    private var romCrc = 0L
+    private lateinit var linkUi: LinkUi
     @Volatile private var loaded = false
     @Volatile private var resumed = false
-    private var menuOpen = false
     private var fastForward = false
     private var overlayMask = 0
     private var overlayStickX = 0f
@@ -85,6 +86,7 @@ class GameActivity : AppCompatActivity() {
             fail(error)
             return
         }
+        linkUi = LinkUi(this, glView, game, romCrc, modal)
         glView.setRenderer(Renderer())
         glView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
         rendererSet = true
@@ -174,6 +176,8 @@ class GameActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 return "Não foi possível abrir ${game.fileName}. A pasta ainda existe?"
             }
+            // Shown to link partners so they can tell it is the same game.
+            romCrc = java.util.zip.CRC32().apply { update(copy.readBytes()) }.value
             copy.path
         }
 
@@ -256,7 +260,7 @@ class GameActivity : AppCompatActivity() {
         resumed = true
         if (!rendererSet) return
         glView.onResume()
-        if (!menuOpen) NativeBridge.setPaused(false)
+        if (modalCount == 0 && !overlay.editMode) NativeBridge.setPaused(false)
         if (loaded) NativeBridge.startAudio()
     }
 
@@ -287,7 +291,9 @@ class GameActivity : AppCompatActivity() {
         }
         NativeBridge.setPaused(true)
         NativeBridge.stopAudio()
+        if (::linkUi.isInitialized) linkUi.release()
         glView.queueEvent {
+            NativeBridge.linkStop()
             NativeBridge.close()
             runOnUiThread { finish() }
         }
@@ -369,12 +375,12 @@ class GameActivity : AppCompatActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (!menuOpen && !overlay.editMode && gamepad.onKey(event)) return true
+        if (modalCount == 0 && !overlay.editMode && gamepad.onKey(event)) return true
         return super.dispatchKeyEvent(event)
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
-        if (!menuOpen && gamepad.onMotion(event)) return true
+        if (modalCount == 0 && gamepad.onMotion(event)) return true
         return super.dispatchGenericMotionEvent(event)
     }
 
@@ -408,6 +414,11 @@ class GameActivity : AppCompatActivity() {
     }
 
     private fun toggleFastForward() {
+        // Both sides of a link must run at the same speed.
+        if (!fastForward && ::linkUi.isInitialized && linkUi.connected) {
+            showMessage("Acelerar fica desligado durante o link")
+            return
+        }
         fastForward = !fastForward
         NativeBridge.setSpeed(if (fastForward) prefs.fastForwardSpeed else 1f)
         overlay.fastForwardOn = fastForward
@@ -417,9 +428,7 @@ class GameActivity : AppCompatActivity() {
     // --- Menu ---------------------------------------------------------------------
 
     private fun showMenu() {
-        if (menuOpen || !loaded) return
-        menuOpen = true
-        NativeBridge.setPaused(true)
+        if (modalCount > 0 || !loaded) return
         val items = mutableListOf(
             getString(R.string.menu_resume) to { },
             getString(R.string.menu_save_state) to { pickSlot(save = true) },
@@ -429,6 +438,8 @@ class GameActivity : AppCompatActivity() {
             getString(R.string.menu_filter) to { pickFilter() },
         )
         if (game.system == GameSystem.N3DS) items += getString(R.string.menu_screen_layout) to { pickLayout() }
+        if (game.system != GameSystem.N3DS && NativeBridge.linkSupported())
+            items += (if (linkUi.connected) "Link cable: conectado" else "Link cable (rede)") to { linkUi.show() }
         items += getString(R.string.menu_edit_controls) to { startEditing() }
         items += (if (overlay.visibility == View.VISIBLE) getString(R.string.menu_hide_controls)
                   else getString(R.string.menu_show_controls)) to {
@@ -437,33 +448,34 @@ class GameActivity : AppCompatActivity() {
         items += getString(R.string.menu_reset) to { glView.queueEvent { NativeBridge.reset() } }
         items += getString(R.string.menu_quit) to { quit() }
 
-        MaterialAlertDialogBuilder(this)
+        modal.show(MaterialAlertDialogBuilder(this)
             .setTitle(game.title)
             .setItems(items.map { it.first }.toTypedArray()) { _, which ->
                 items[which].second()
-            }
-            .setOnDismissListener { closeMenu() }
-            .show()
+            })
     }
 
-    private fun closeMenu() {
-        // A submenu may still be open; it closes the menu itself.
-        window.decorView.post {
-            if (!subDialogOpen) {
-                menuOpen = false
-                if (resumed && !overlay.editMode) NativeBridge.setPaused(false)
+    /**
+     * Dialogs over the game keep it paused while any is open. A dialog that
+     * opens another from its click handler hands over without a gap: the new
+     * one is counted before the old one's dismissal.
+     */
+    private var modalCount = 0
+    private val modal = object : LinkUi.Modal {
+        override fun show(builder: MaterialAlertDialogBuilder, onDismiss: (() -> Unit)?): androidx.appcompat.app.AlertDialog {
+            modalCount++
+            NativeBridge.setPaused(true)
+            builder.setOnDismissListener {
+                onDismiss?.invoke()
+                modalCount--
+                if (modalCount == 0 && resumed && !overlay.editMode) NativeBridge.setPaused(false)
             }
+            return builder.show()
         }
     }
 
-    private var subDialogOpen = false
-
     private fun subDialog(builder: MaterialAlertDialogBuilder) {
-        subDialogOpen = true
-        builder.setOnDismissListener {
-            subDialogOpen = false
-            closeMenu()
-        }.show()
+        modal.show(builder)
     }
 
     private fun stateFile(slot: Int) = File(stateDir, "${game.saveName}.state$slot")
@@ -524,8 +536,7 @@ class GameActivity : AppCompatActivity() {
     private fun finishEditing() {
         overlay.setEditMode(false)
         editPanel.visibility = View.GONE
-        menuOpen = false
-        if (resumed) NativeBridge.setPaused(false)
+        if (resumed && modalCount == 0) NativeBridge.setPaused(false)
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()

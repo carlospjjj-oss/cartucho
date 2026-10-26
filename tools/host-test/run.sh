@@ -16,6 +16,7 @@ $CXX resampler_test.cpp $SRC/resampler.cpp $SRC/core_host.cpp -ldl -o "$OUT/resa
 gcc -shared -fPIC -O1 -I$SRC fake_hw_core.c -o "$OUT/fake_hw_core.so"
 $CXX gl_test.cpp $SRC/core_host.cpp $SRC/gl_presenter.cpp -lEGL -lGLESv2 -ldl -o "$OUT/gl_test"
 $CXX host_test.cpp $SRC/core_host.cpp -ldl -o "$OUT/host_test"
+$CXX link_test.cpp $SRC/core_host.cpp -ldl -lpthread -o "$OUT/link_test"
 
 "$OUT/pacer_test"
 "$OUT/resampler_test"
@@ -29,4 +30,12 @@ if ! EGL_PLATFORM=surfaceless "$OUT/gl_test" "$OUT/fake_hw_core.so"; then
 fi
 if [ $# -ge 2 ]; then
     "$OUT/host_test" "$1" "$2" "$OUT/frame.ppm" 400 2>/dev/null
+    # Network link between two processes, when the core has the extension.
+    if nm -D "$1" 2>/dev/null | grep -c cartucho_link_start > /dev/null; then
+        "$OUT/link_test" "$1" "$2" server 5791 2>/dev/null &
+        server=$!
+        sleep 1
+        "$OUT/link_test" "$1" "$2" client 5791 2>/dev/null
+        wait $server
+    fi
 fi

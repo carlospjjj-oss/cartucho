@@ -40,9 +40,14 @@ saves.
   (empilhado, lado a lado, tela grande + pequena, uma tela), trocar telas,
   resolução interna até 4x, New 3DS.
 
+- **Link cable pela rede** (GBA e Game Boy): hospede ou entre numa partida
+  no mesmo Wi-Fi; as partidas aparecem sozinhas, sem digitar IP. Cabo de
+  GBA (2 a 4 jogadores) e adaptador sem fio (Union Room de Pokémon). Usa o
+  mesmo protocolo do VBA-M de PC na mesma versão, então PC e celular também
+  se conectam.
+
 ## Ainda não tem
 
-- Link cable entre aparelhos na rede (próxima etapa).
 - BIOS: nenhuma vem no app (são da Nintendo). Nenhuma é obrigatória; em
   Configurações → BIOS dá para importar as do seu próprio console.
 - Instalar arquivos `.cia` no 3DS (use `.3ds`/`.cci`/`.cxi` descriptografados).

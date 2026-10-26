@@ -47,6 +47,15 @@ object NativeBridge {
     external fun takeMessage(): String?
     external fun shutdownRequested(): Boolean
     external fun usesHardwareRender(): Boolean
+
+    // Network link (GBA / GB). linkStart and linkStop: GL thread.
+    external fun linkSupported(): Boolean
+    /** mode: 0 GBA cable, 1 GBA wireless adapter, 2 Game Boy cable. */
+    external fun linkStart(mode: Int, server: Boolean, players: Int, host: String, port: Int)
+    external fun linkStop()
+    /** -1 off, 0 connected, 1 failed, 2 connecting. */
+    external fun linkState(): Int
+    external fun linkMessage(): String?
 }
 
 /** RetroPad button ids (bit positions in NativeBridge.setButtons). */

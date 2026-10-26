@@ -407,6 +407,10 @@ void CoreHost::FlushSaveRam() {
         PlatformLog(RETRO_LOG_ERROR, ("Could not write save " + save_path_).c_str());
 }
 
+void* CoreHost::Symbol(const char* name) const {
+    return handle_ ? dlsym(handle_, name) : nullptr;
+}
+
 std::string CoreHost::TakeMessage() {
     std::lock_guard<std::mutex> lock(message_mutex_);
     std::string m;

@@ -128,6 +128,10 @@ public:
     // The core requested shutdown (RETRO_ENVIRONMENT_SHUTDOWN).
     bool shutdown_requested() const { return shutdown_requested_; }
 
+    // A symbol exported by the loaded core (frontend extensions such as the
+    // patched VBA-M core's cartucho_link_*), or null.
+    void* Symbol(const char* name) const;
+
     // Options as declared by the core (key -> "desc; a|b|c") and current values.
     std::map<std::string, std::string> DeclaredOptions();
     std::string OptionValue(const std::string& key);

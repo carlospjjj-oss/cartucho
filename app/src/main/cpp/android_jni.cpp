@@ -277,3 +277,34 @@ JNI_FN(jboolean, shutdownRequested)(JNIEnv*, jobject) {
 JNI_FN(jboolean, usesHardwareRender)(JNIEnv*, jobject) {
     return g_session && g_session->host().uses_hw_render();
 }
+
+// --- Network link -----------------------------------------------------------
+
+JNI_FN(jboolean, linkSupported)(JNIEnv*, jobject) {
+    return g_session && g_session->link_supported();
+}
+
+// GL thread. mode: 0 GBA cable, 1 GBA wireless adapter, 2 Game Boy.
+JNI_FN(void, linkStart)(JNIEnv* env, jobject, jint mode, jboolean server, jint players,
+                        jstring host, jint port) {
+    if (g_session)
+        g_session->LinkStart(mode, server, players, ToStd(env, host), port);
+}
+
+// GL thread.
+JNI_FN(void, linkStop)(JNIEnv*, jobject) {
+    if (g_session)
+        g_session->LinkStop();
+}
+
+// -1 off, 0 connected, 1 failed, 2 connecting.
+JNI_FN(jint, linkState)(JNIEnv*, jobject) {
+    return g_session ? g_session->link_state() : -1;
+}
+
+JNI_FN(jstring, linkMessage)(JNIEnv* env, jobject) {
+    if (!g_session)
+        return nullptr;
+    const std::string m = g_session->link_message();
+    return m.empty() ? nullptr : ToJava(env, m);
+}
