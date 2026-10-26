@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="filter_names">
+        <item>@string/filter_sharp</item>
+        <item>@string/filter_smooth</item>
+        <item>@string/filter_sharp_smooth</item>
+        <item>@string/filter_lcd</item>
+        <item>@string/filter_scanlines</item>
+    </string-array>
+    <string-array name="filter_values">
+        <item>0</item><item>1</item><item>2</item><item>3</item><item>4</item>
+    </string-array>
+    <string-array name="ff_names">
+        <item>2x</item><item>3x</item><item>4x</item><item>6x</item>
+    </string-array>
+    <string-array name="ff_values">
+        <item>2</item><item>3</item><item>4</item><item>6</item>
+    </string-array>
+    <string-array name="res_names">
+        <item>Nativa (400×240) — mais leve</item>
+        <item>2x (800×480)</item>
+        <item>3x (1200×720)</item>
+        <item>4x (1600×960) — celulares fortes</item>
+    </string-array>
+    <string-array name="res_values">
+        <item>1</item><item>2</item><item>3</item><item>4</item>
+    </string-array>
+    <string-array name="layout_names">
+        <item>@string/layout_auto</item>
+        <item>@string/layout_stacked</item>
+        <item>@string/layout_side</item>
+        <item>@string/layout_large</item>
+        <item>@string/layout_single</item>
+    </string-array>
+    <string-array name="layout_values">
+        <item>auto</item><item>default</item><item>side_by_side</item><item>large_screen</item><item>single_screen</item>
+    </string-array>
+</resources>

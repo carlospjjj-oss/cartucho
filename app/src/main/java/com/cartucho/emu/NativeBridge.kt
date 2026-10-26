@@ -1,0 +1,70 @@
+package com.cartucho.emu
+
+/**
+ * The native frontend (app/src/main/cpp). One game per process; see
+ * GameActivity. Functions marked "GL thread" must run on the GLSurfaceView
+ * render thread (queueEvent or the renderer callbacks).
+ */
+object NativeBridge {
+    init {
+        System.loadLibrary("cartucho")
+    }
+
+    /** Loads a core library. Returns null on success, else the error. */
+    external fun open(corePath: String, systemDir: String, saveDir: String): String?
+    external fun setGame(romPath: String, savePath: String)
+    external fun setOption(key: String, value: String)
+    /** Alternating key, "Description; a|b|c", current value. */
+    external fun options(): Array<String>
+
+    /** GL thread. Loads the game on first call. Null on success. */
+    external fun surfaceCreated(): String?
+    external fun surfaceChanged(width: Int, height: Int)
+    external fun drawFrame()
+
+    external fun startAudio()
+    external fun stopAudio()
+    external fun setPaused(paused: Boolean)
+    external fun setSpeed(speed: Float)
+
+    /** Bits are RetroPad ids (Retro.B, Retro.A ...). */
+    external fun setButtons(mask: Int)
+    external fun setAnalog(stick: Int, x: Float, y: Float)
+    external fun touch(x: Float, y: Float, pressed: Boolean)
+
+    /** GL thread. Null on success. */
+    external fun saveState(path: String): String?
+    /** GL thread. Null on success. */
+    external fun loadState(path: String): String?
+    external fun reset()
+    external fun flushSave()
+    external fun close()
+
+    external fun setDisplay(filter: Int, integerScale: Boolean, verticalAlign: Int, bottomReserve: Float)
+    /** [x, y, w, h] of the picture on the surface. */
+    external fun viewport(): IntArray
+    external fun measuredFps(): Float
+    external fun takeMessage(): String?
+    external fun shutdownRequested(): Boolean
+    external fun usesHardwareRender(): Boolean
+}
+
+/** RetroPad button ids (bit positions in NativeBridge.setButtons). */
+object Retro {
+    const val B = 0
+    const val Y = 1
+    const val SELECT = 2
+    const val START = 3
+    const val UP = 4
+    const val DOWN = 5
+    const val LEFT = 6
+    const val RIGHT = 7
+    const val A = 8
+    const val X = 9
+    const val L = 10
+    const val R = 11
+    const val L2 = 12
+    const val R2 = 13
+    const val L3 = 14
+    const val R3 = 15
+}

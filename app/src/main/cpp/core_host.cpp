@@ -1,0 +1,760 @@
+#include "core_host.h"
+
+#include <dlfcn.h>
+
+#include <algorithm>
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <set>
+
+#include "platform.h"
+
+namespace cartucho {
+
+// --- AudioRing ---------------------------------------------------------------
+
+AudioRing::AudioRing(size_t capacity_frames) : buf_(capacity_frames * 2), cap_(capacity_frames) {}
+
+size_t AudioRing::Available() const {
+    const size_t head = head_.load(std::memory_order_acquire);
+    const size_t tail = tail_.load(std::memory_order_acquire);
+    return head - tail;
+}
+
+size_t AudioRing::Push(const int16_t* stereo, size_t frames) {
+    const size_t head = head_.load(std::memory_order_relaxed);
+    const size_t tail = tail_.load(std::memory_order_acquire);
+    const size_t space = cap_ - (head - tail);
+    const size_t n = std::min(space, frames);
+    for (size_t i = 0; i < n; i++) {
+        const size_t slot = (head + i) % cap_;
+        buf_[slot * 2] = stereo[i * 2];
+        buf_[slot * 2 + 1] = stereo[i * 2 + 1];
+    }
+    head_.store(head + n, std::memory_order_release);
+    return n;
+}
+
+size_t AudioRing::Pop(int16_t* stereo, size_t frames) {
+    const size_t tail = tail_.load(std::memory_order_relaxed);
+    const size_t head = head_.load(std::memory_order_acquire);
+    const size_t n = std::min(head - tail, frames);
+    for (size_t i = 0; i < n; i++) {
+        const size_t slot = (tail + i) % cap_;
+        stereo[i * 2] = buf_[slot * 2];
+        stereo[i * 2 + 1] = buf_[slot * 2 + 1];
+    }
+    std::memset(stereo + n * 2, 0, (frames - n) * 2 * sizeof(int16_t));
+    tail_.store(tail + n, std::memory_order_release);
+    return n;
+}
+
+void AudioRing::Clear() {
+    tail_.store(head_.load(std::memory_order_acquire), std::memory_order_release);
+}
+
+// --- Core API ----------------------------------------------------------------
+
+struct CoreHost::Api {
+    void (*set_environment)(retro_environment_t);
+    void (*set_video_refresh)(retro_video_refresh_t);
+    void (*set_audio_sample)(retro_audio_sample_t);
+    void (*set_audio_sample_batch)(retro_audio_sample_batch_t);
+    void (*set_input_poll)(retro_input_poll_t);
+    void (*set_input_state)(retro_input_state_t);
+    void (*init)();
+    void (*deinit)();
+    unsigned (*api_version)();
+    void (*get_system_info)(retro_system_info*);
+    void (*get_system_av_info)(retro_system_av_info*);
+    void (*set_controller_port_device)(unsigned, unsigned);
+    void (*reset)();
+    void (*run)();
+    size_t (*serialize_size)();
+    bool (*serialize)(void*, size_t);
+    bool (*unserialize)(const void*, size_t);
+    bool (*load_game)(const retro_game_info*);
+    void (*unload_game)();
+    void* (*get_memory_data)(unsigned);
+    size_t (*get_memory_size)(unsigned);
+    bool initialized = false;
+};
+
+namespace {
+
+CoreHost* g_current = nullptr;
+
+bool ReadFile(const std::string& path, std::vector<uint8_t>* out) {
+    FILE* f = std::fopen(path.c_str(), "rb");
+    if (!f)
+        return false;
+    out->clear();
+    uint8_t chunk[1 << 16];
+    size_t n;
+    while ((n = std::fread(chunk, 1, sizeof(chunk), f)) > 0)
+        out->insert(out->end(), chunk, chunk + n);
+    const bool ok = !std::ferror(f);
+    std::fclose(f);
+    return ok;
+}
+
+// Writes through a temporary file so a crash mid-write never leaves a
+// truncated save behind.
+bool WriteFileAtomic(const std::string& path, const void* data, size_t size) {
+    const std::string tmp = path + ".tmp";
+    FILE* f = std::fopen(tmp.c_str(), "wb");
+    if (!f)
+        return false;
+    const bool ok = std::fwrite(data, 1, size, f) == size && std::fflush(f) == 0;
+    std::fclose(f);
+    if (!ok || std::rename(tmp.c_str(), path.c_str()) != 0) {
+        std::remove(tmp.c_str());
+        return false;
+    }
+    return true;
+}
+
+// "Description; first|second|third" -> "first" (the libretro default).
+std::string DefaultFromDeclaration(const std::string& decl) {
+    const size_t semi = decl.find(';');
+    if (semi == std::string::npos)
+        return {};
+    size_t start = semi + 1;
+    while (start < decl.size() && decl[start] == ' ')
+        start++;
+    const size_t bar = decl.find('|', start);
+    return decl.substr(start, bar == std::string::npos ? std::string::npos : bar - start);
+}
+
+uint32_t Expand5(uint32_t v) { return (v << 3) | (v >> 2); }
+uint32_t Expand6(uint32_t v) { return (v << 2) | (v >> 4); }
+
+}  // namespace
+
+// --- CoreHost ----------------------------------------------------------------
+
+CoreHost::CoreHost() : api_(std::make_unique<Api>()) {
+    g_current = this;
+}
+
+CoreHost::~CoreHost() {
+    if (game_loaded_)
+        UnloadGame();
+    if (api_->initialized)
+        api_->deinit();
+    // The library is deliberately not dlclose()d: several cores leave threads
+    // or atexit handlers behind. The game runs in its own process, which ends
+    // with the session.
+    if (g_current == this)
+        g_current = nullptr;
+}
+
+CoreHost* CoreHost::Current() {
+    return g_current;
+}
+
+void CoreHost::SetDirectories(const std::string& system_dir, const std::string& save_dir) {
+    system_dir_ = system_dir;
+    save_dir_ = save_dir;
+}
+
+void CoreHost::SetOption(const std::string& key, const std::string& value) {
+    std::lock_guard<std::mutex> lock(options_mutex_);
+    auto it = overrides_.find(key);
+    if (it != overrides_.end() && it->second == value)
+        return;
+    overrides_[key] = value;
+    options_dirty_ = true;
+}
+
+std::map<std::string, std::string> CoreHost::DeclaredOptions() {
+    std::lock_guard<std::mutex> lock(options_mutex_);
+    return declared_;
+}
+
+std::string CoreHost::OptionValue(const std::string& key) {
+    std::lock_guard<std::mutex> lock(options_mutex_);
+    auto o = overrides_.find(key);
+    if (o != overrides_.end())
+        return o->second;
+    auto d = defaults_.find(key);
+    return d != defaults_.end() ? d->second : std::string();
+}
+
+bool CoreHost::LoadCore(const std::string& path, std::string* error) {
+    handle_ = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    if (!handle_) {
+        const char* why = dlerror();
+        *error = "Could not open core " + path + ": " + (why ? why : "unknown error");
+        return false;
+    }
+    bool missing = false;
+    auto sym = [&](const char* name) -> void* {
+        void* p = dlsym(handle_, name);
+        if (!p) {
+            missing = true;
+            *error = std::string("Core is missing ") + name;
+        }
+        return p;
+    };
+#define CARTUCHO_SYM(field, name) \
+    api_->field = reinterpret_cast<decltype(api_->field)>(sym(name))
+    CARTUCHO_SYM(set_environment, "retro_set_environment");
+    CARTUCHO_SYM(set_video_refresh, "retro_set_video_refresh");
+    CARTUCHO_SYM(set_audio_sample, "retro_set_audio_sample");
+    CARTUCHO_SYM(set_audio_sample_batch, "retro_set_audio_sample_batch");
+    CARTUCHO_SYM(set_input_poll, "retro_set_input_poll");
+    CARTUCHO_SYM(set_input_state, "retro_set_input_state");
+    CARTUCHO_SYM(init, "retro_init");
+    CARTUCHO_SYM(deinit, "retro_deinit");
+    CARTUCHO_SYM(api_version, "retro_api_version");
+    CARTUCHO_SYM(get_system_info, "retro_get_system_info");
+    CARTUCHO_SYM(get_system_av_info, "retro_get_system_av_info");
+    CARTUCHO_SYM(set_controller_port_device, "retro_set_controller_port_device");
+    CARTUCHO_SYM(reset, "retro_reset");
+    CARTUCHO_SYM(run, "retro_run");
+    CARTUCHO_SYM(serialize_size, "retro_serialize_size");
+    CARTUCHO_SYM(serialize, "retro_serialize");
+    CARTUCHO_SYM(unserialize, "retro_unserialize");
+    CARTUCHO_SYM(load_game, "retro_load_game");
+    CARTUCHO_SYM(unload_game, "retro_unload_game");
+    CARTUCHO_SYM(get_memory_data, "retro_get_memory_data");
+    CARTUCHO_SYM(get_memory_size, "retro_get_memory_size");
+#undef CARTUCHO_SYM
+    if (missing)
+        return false;
+    if (api_->api_version() != RETRO_API_VERSION) {
+        *error = "Core uses an incompatible libretro API version";
+        return false;
+    }
+
+    api_->set_environment(&CoreHost::EnvTrampoline);
+    api_->set_video_refresh(&CoreHost::VideoTrampoline);
+    api_->set_audio_sample(&CoreHost::AudioSampleTrampoline);
+    api_->set_audio_sample_batch(&CoreHost::AudioBatchTrampoline);
+    api_->set_input_poll(&CoreHost::InputPollTrampoline);
+    api_->set_input_state(&CoreHost::InputStateTrampoline);
+    api_->init();
+    api_->initialized = true;
+    api_->get_system_info(&system_info_);
+    PlatformLog(RETRO_LOG_INFO, (std::string("Loaded core ") +
+                                 (system_info_.library_name ? system_info_.library_name : "?") +
+                                 " " +
+                                 (system_info_.library_version ? system_info_.library_version : ""))
+                                    .c_str());
+    return true;
+}
+
+bool CoreHost::LoadGame(const std::string& rom_path, const std::string& save_path,
+                        std::string* error) {
+    rom_path_ = rom_path;
+    save_path_ = save_path;
+
+    retro_game_info info{};
+    info.path = rom_path_.c_str();
+    if (!system_info_.need_fullpath) {
+        if (!ReadFile(rom_path_, &rom_data_)) {
+            *error = "Could not read " + rom_path_;
+            return false;
+        }
+        info.data = rom_data_.data();
+        info.size = rom_data_.size();
+    }
+    if (!api_->load_game(&info)) {
+        *error = "The core could not load this game";
+        return false;
+    }
+    game_loaded_ = true;
+    api_->get_system_av_info(&av_info_);
+    api_->set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
+    LoadSaveRam();
+    return true;
+}
+
+void CoreHost::UnloadGame() {
+    if (!game_loaded_)
+        return;
+    FlushSaveRam();
+    api_->unload_game();
+    game_loaded_ = false;
+}
+
+void CoreHost::ContextReset() {
+    if (!hw_requested_ || !hw_render_.context_reset)
+        return;
+    hw_context_alive_ = true;
+    hw_render_.context_reset();
+}
+
+void CoreHost::ContextDestroy() {
+    if (!hw_requested_ || !hw_context_alive_)
+        return;
+    hw_context_alive_ = false;
+    if (hw_render_.context_destroy)
+        hw_render_.context_destroy();
+}
+
+float CoreHost::aspect() const {
+    if (av_info_.geometry.aspect_ratio > 0.0f)
+        return av_info_.geometry.aspect_ratio;
+    if (frame_.width && frame_.height)
+        return static_cast<float>(frame_.width) / static_cast<float>(frame_.height);
+    if (av_info_.geometry.base_width && av_info_.geometry.base_height)
+        return static_cast<float>(av_info_.geometry.base_width) /
+               static_cast<float>(av_info_.geometry.base_height);
+    return 4.0f / 3.0f;
+}
+
+void CoreHost::RunFrame() {
+    if (game_loaded_)
+        api_->run();
+}
+
+void CoreHost::Reset() {
+    if (game_loaded_)
+        api_->reset();
+}
+
+void CoreHost::SetAnalog(int stick, int16_t x, int16_t y) {
+    if (stick < 0 || stick > 1)
+        return;
+    const int32_t packed = static_cast<int32_t>(static_cast<uint16_t>(x)) |
+                           (static_cast<int32_t>(static_cast<uint16_t>(y)) << 16);
+    analog_[stick].store(packed, std::memory_order_relaxed);
+}
+
+void CoreHost::SetPointer(int16_t x, int16_t y, bool pressed) {
+    const int32_t packed = static_cast<int32_t>(static_cast<uint16_t>(x)) |
+                           (static_cast<int32_t>(static_cast<uint16_t>(y)) << 16);
+    pointer_.store(packed, std::memory_order_relaxed);
+    pointer_pressed_.store(pressed, std::memory_order_relaxed);
+}
+
+bool CoreHost::SaveState(const std::string& path, std::string* error) {
+    if (!game_loaded_) {
+        *error = "No game is running";
+        return false;
+    }
+    const size_t size = api_->serialize_size();
+    if (size == 0) {
+        *error = "This core does not support save states";
+        return false;
+    }
+    std::vector<uint8_t> data(size);
+    if (!api_->serialize(data.data(), data.size())) {
+        *error = "The core could not create the save state";
+        return false;
+    }
+    if (!WriteFileAtomic(path, data.data(), data.size())) {
+        *error = "Could not write " + path;
+        return false;
+    }
+    return true;
+}
+
+bool CoreHost::LoadState(const std::string& path, std::string* error) {
+    if (!game_loaded_) {
+        *error = "No game is running";
+        return false;
+    }
+    std::vector<uint8_t> data;
+    if (!ReadFile(path, &data) || data.empty()) {
+        *error = "No save state in this slot";
+        return false;
+    }
+    if (!api_->unserialize(data.data(), data.size())) {
+        *error = "The save state is from another version or game";
+        return false;
+    }
+    audio_.Clear();
+    return true;
+}
+
+void CoreHost::LoadSaveRam() {
+    if (save_path_.empty())
+        return;
+    void* mem = api_->get_memory_data(RETRO_MEMORY_SAVE_RAM);
+    const size_t size = api_->get_memory_size(RETRO_MEMORY_SAVE_RAM);
+    if (!mem || size == 0)
+        return;
+    std::vector<uint8_t> data;
+    if (ReadFile(save_path_, &data) && !data.empty()) {
+        std::memcpy(mem, data.data(), std::min(size, data.size()));
+        last_saved_sram_.assign(static_cast<uint8_t*>(mem), static_cast<uint8_t*>(mem) + size);
+    }
+}
+
+void CoreHost::FlushSaveRam() {
+    if (!game_loaded_ || save_path_.empty())
+        return;
+    void* mem = api_->get_memory_data(RETRO_MEMORY_SAVE_RAM);
+    const size_t size = api_->get_memory_size(RETRO_MEMORY_SAVE_RAM);
+    if (!mem || size == 0)
+        return;
+    const uint8_t* bytes = static_cast<const uint8_t*>(mem);
+    if (last_saved_sram_.size() == size && std::memcmp(last_saved_sram_.data(), bytes, size) == 0)
+        return;
+    // A save area that was never written holds only 0xFF/0x00; don't create
+    // a file for games that have not saved yet.
+    if (last_saved_sram_.empty() &&
+        std::all_of(bytes, bytes + size, [&](uint8_t b) { return b == bytes[0]; }))
+        return;
+    if (WriteFileAtomic(save_path_, bytes, size))
+        last_saved_sram_.assign(bytes, bytes + size);
+    else
+        PlatformLog(RETRO_LOG_ERROR, ("Could not write save " + save_path_).c_str());
+}
+
+std::string CoreHost::TakeMessage() {
+    std::lock_guard<std::mutex> lock(message_mutex_);
+    std::string m;
+    m.swap(message_);
+    return m;
+}
+
+// --- Environment ---------------------------------------------------------------
+
+bool CoreHost::Environment(unsigned cmd, void* data) {
+    switch (cmd) {
+        case RETRO_ENVIRONMENT_GET_CAN_DUPE:
+            *static_cast<bool*>(data) = true;
+            return true;
+
+        case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: {
+            const auto fmt = *static_cast<const retro_pixel_format*>(data);
+            if (fmt != RETRO_PIXEL_FORMAT_0RGB1555 && fmt != RETRO_PIXEL_FORMAT_XRGB8888 &&
+                fmt != RETRO_PIXEL_FORMAT_RGB565)
+                return false;
+            pixel_format_ = fmt;
+            return true;
+        }
+
+        case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY:
+            *static_cast<const char**>(data) = system_dir_.c_str();
+            return true;
+        case RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY:
+            *static_cast<const char**>(data) = save_dir_.c_str();
+            return true;
+        case RETRO_ENVIRONMENT_GET_CORE_ASSETS_DIRECTORY:
+            *static_cast<const char**>(data) = system_dir_.c_str();
+            return true;
+
+        case RETRO_ENVIRONMENT_GET_LOG_INTERFACE:
+            static_cast<retro_log_callback*>(data)->log = &CoreHost::LogTrampoline;
+            return true;
+
+        case RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER:
+            *static_cast<unsigned*>(data) = preferred_hw_;
+            return true;
+
+        case RETRO_ENVIRONMENT_SET_HW_RENDER: {
+            auto* cb = static_cast<retro_hw_render_callback*>(data);
+            const bool gles = cb->context_type == RETRO_HW_CONTEXT_OPENGLES2 ||
+                              cb->context_type == RETRO_HW_CONTEXT_OPENGLES3 ||
+                              cb->context_type == RETRO_HW_CONTEXT_OPENGLES_VERSION;
+            if (!gles || !hw_hooks_.current_framebuffer) {
+                PlatformLog(RETRO_LOG_WARN, "Core asked for a hardware context we do not offer");
+                return false;
+            }
+            cb->get_current_framebuffer = &CoreHost::HwFramebufferTrampoline;
+            cb->get_proc_address = &CoreHost::HwProcTrampoline;
+            hw_render_ = *cb;
+            hw_requested_ = true;
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_HW_SHARED_CONTEXT:
+            return true;
+
+        case RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION:
+            // Version 0: cores fall back to SET_VARIABLES, whose
+            // "Description; default|other|..." strings carry everything the
+            // frontend needs.
+            *static_cast<unsigned*>(data) = 0;
+            return true;
+
+        case RETRO_ENVIRONMENT_SET_VARIABLES: {
+            std::lock_guard<std::mutex> lock(options_mutex_);
+            for (auto* v = static_cast<const retro_variable*>(data); v && v->key; v++) {
+                if (!v->value)
+                    continue;
+                declared_[v->key] = v->value;
+                defaults_[v->key] = DefaultFromDeclaration(v->value);
+            }
+            options_dirty_ = true;
+            return true;
+        }
+
+        case RETRO_ENVIRONMENT_GET_VARIABLE: {
+            auto* var = static_cast<retro_variable*>(data);
+            if (!var || !var->key)
+                return false;
+            std::lock_guard<std::mutex> lock(options_mutex_);
+            std::string value;
+            if (auto o = overrides_.find(var->key); o != overrides_.end())
+                value = o->second;
+            else if (auto d = defaults_.find(var->key); d != defaults_.end())
+                value = d->second;
+            else {
+                var->value = nullptr;
+                return false;
+            }
+            // The pointer handed out must stay valid until the next call for
+            // the same key; std::map nodes never move.
+            std::string& slot = value_cache_[var->key];
+            slot = value;
+            var->value = slot.c_str();
+            return true;
+        }
+
+        case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: {
+            std::lock_guard<std::mutex> lock(options_mutex_);
+            *static_cast<bool*>(data) = options_dirty_;
+            options_dirty_ = false;
+            return true;
+        }
+
+        case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY:
+        case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS:
+        case RETRO_ENVIRONMENT_SET_CONTROLLER_INFO:
+        case RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO:
+        case RETRO_ENVIRONMENT_SET_MEMORY_MAPS:
+        case RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS:
+        case RETRO_ENVIRONMENT_SET_SUPPORT_ACHIEVEMENTS:
+        case RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL:
+        case RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME:
+        case RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY:
+            return true;
+
+        case RETRO_ENVIRONMENT_GET_INPUT_BITMASKS:
+            return true;
+
+        case RETRO_ENVIRONMENT_GET_LANGUAGE:
+            *static_cast<unsigned*>(data) = RETRO_LANGUAGE_PORTUGUESE_BRAZIL;
+            return true;
+
+        case RETRO_ENVIRONMENT_GET_USERNAME:
+            *static_cast<const char**>(data) = "Cartucho";
+            return true;
+
+        case RETRO_ENVIRONMENT_SET_GEOMETRY:
+            av_info_.geometry = *static_cast<const retro_game_geometry*>(data);
+            return true;
+
+        case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO:
+            av_info_ = *static_cast<const retro_system_av_info*>(data);
+            return true;
+
+        case RETRO_ENVIRONMENT_SET_MESSAGE: {
+            const auto* msg = static_cast<const retro_message*>(data);
+            if (msg && msg->msg) {
+                std::lock_guard<std::mutex> lock(message_mutex_);
+                message_ = msg->msg;
+            }
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_MESSAGE_EXT: {
+            const auto* msg = static_cast<const retro_message_ext*>(data);
+            if (msg && msg->msg && msg->target != RETRO_MESSAGE_TARGET_LOG) {
+                std::lock_guard<std::mutex> lock(message_mutex_);
+                message_ = msg->msg;
+            }
+            if (msg && msg->msg)
+                PlatformLog(RETRO_LOG_INFO, msg->msg);
+            return true;
+        }
+        case RETRO_ENVIRONMENT_GET_MESSAGE_INTERFACE_VERSION:
+            *static_cast<unsigned*>(data) = 1;
+            return true;
+
+        case RETRO_ENVIRONMENT_SHUTDOWN:
+            shutdown_requested_ = true;
+            return true;
+
+        case RETRO_ENVIRONMENT_GET_JIT_CAPABLE:
+            *static_cast<bool*>(data) = true;
+            return true;
+
+        case RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE:
+            *static_cast<int*>(data) = 1 | 2;  // video and audio
+            return true;
+
+        case RETRO_ENVIRONMENT_GET_FASTFORWARDING:
+            *static_cast<bool*>(data) = audio_muted_;
+            return true;
+
+        case RETRO_ENVIRONMENT_GET_TARGET_REFRESH_RATE:
+            *static_cast<float*>(data) = 60.0f;
+            return true;
+
+        default: {
+            // Unknown or unsupported: answer "no" so the core uses its
+            // fallback. Log each command once to help with new cores.
+            static std::set<unsigned> logged;
+            if (logged.insert(cmd).second) {
+                char text[96];
+                std::snprintf(text, sizeof(text), "Unhandled environment command %u",
+                              cmd & ~RETRO_ENVIRONMENT_EXPERIMENTAL);
+                PlatformLog(RETRO_LOG_DEBUG, text);
+            }
+            return false;
+        }
+    }
+}
+
+void CoreHost::VideoRefresh(const void* data, unsigned width, unsigned height, size_t pitch) {
+    if (!data)
+        return;  // duplicate frame: keep showing the last one
+    if (data == RETRO_HW_FRAME_BUFFER_VALID) {
+        frame_.hw = true;
+        frame_.width = width;
+        frame_.height = height;
+        frame_.serial++;
+        return;
+    }
+    frame_.hw = false;
+    frame_.width = width;
+    frame_.height = height;
+    frame_.rgba.resize(static_cast<size_t>(width) * height * 4);
+    uint8_t* dst = frame_.rgba.data();
+    const uint8_t* src = static_cast<const uint8_t*>(data);
+    for (unsigned y = 0; y < height; y++, src += pitch) {
+        switch (pixel_format_) {
+            case RETRO_PIXEL_FORMAT_XRGB8888: {
+                const uint32_t* row = reinterpret_cast<const uint32_t*>(src);
+                for (unsigned x = 0; x < width; x++) {
+                    const uint32_t p = row[x];
+                    *dst++ = static_cast<uint8_t>(p >> 16);
+                    *dst++ = static_cast<uint8_t>(p >> 8);
+                    *dst++ = static_cast<uint8_t>(p);
+                    *dst++ = 0xff;
+                }
+                break;
+            }
+            case RETRO_PIXEL_FORMAT_RGB565: {
+                const uint16_t* row = reinterpret_cast<const uint16_t*>(src);
+                for (unsigned x = 0; x < width; x++) {
+                    const uint32_t p = row[x];
+                    *dst++ = static_cast<uint8_t>(Expand5(p >> 11));
+                    *dst++ = static_cast<uint8_t>(Expand6((p >> 5) & 0x3f));
+                    *dst++ = static_cast<uint8_t>(Expand5(p & 0x1f));
+                    *dst++ = 0xff;
+                }
+                break;
+            }
+            default: {  // 0RGB1555
+                const uint16_t* row = reinterpret_cast<const uint16_t*>(src);
+                for (unsigned x = 0; x < width; x++) {
+                    const uint32_t p = row[x];
+                    *dst++ = static_cast<uint8_t>(Expand5((p >> 10) & 0x1f));
+                    *dst++ = static_cast<uint8_t>(Expand5((p >> 5) & 0x1f));
+                    *dst++ = static_cast<uint8_t>(Expand5(p & 0x1f));
+                    *dst++ = 0xff;
+                }
+                break;
+            }
+        }
+    }
+    frame_.serial++;
+}
+
+size_t CoreHost::AudioBatch(const int16_t* data, size_t frames) {
+    if (!audio_muted_)
+        audio_.Push(data, frames);
+    return frames;
+}
+
+int16_t CoreHost::InputState(unsigned port, unsigned device, unsigned index, unsigned id) {
+    if (port != 0)
+        return 0;
+    switch (device) {
+        case RETRO_DEVICE_JOYPAD: {
+            const uint32_t mask = buttons_.load(std::memory_order_relaxed);
+            if (id == RETRO_DEVICE_ID_JOYPAD_MASK)
+                return static_cast<int16_t>(mask & 0xffff);
+            return (id < 16 && (mask & (1u << id))) ? 1 : 0;
+        }
+        case RETRO_DEVICE_ANALOG: {
+            if (index > RETRO_DEVICE_INDEX_ANALOG_RIGHT)
+                return 0;
+            const int32_t packed = analog_[index].load(std::memory_order_relaxed);
+            return static_cast<int16_t>(id == RETRO_DEVICE_ID_ANALOG_X ? (packed & 0xffff)
+                                                                       : ((packed >> 16) & 0xffff));
+        }
+        case RETRO_DEVICE_POINTER: {
+            if (index != 0)
+                return 0;
+            const int32_t packed = pointer_.load(std::memory_order_relaxed);
+            switch (id) {
+                case RETRO_DEVICE_ID_POINTER_X:
+                    return static_cast<int16_t>(packed & 0xffff);
+                case RETRO_DEVICE_ID_POINTER_Y:
+                    return static_cast<int16_t>((packed >> 16) & 0xffff);
+                case RETRO_DEVICE_ID_POINTER_PRESSED:
+                    return pointer_pressed_.load(std::memory_order_relaxed) ? 1 : 0;
+                case RETRO_DEVICE_ID_POINTER_COUNT:
+                    return pointer_pressed_.load(std::memory_order_relaxed) ? 1 : 0;
+                default:
+                    return 0;
+            }
+        }
+        default:
+            return 0;
+    }
+}
+
+// --- Trampolines -----------------------------------------------------------------
+
+bool CoreHost::EnvTrampoline(unsigned cmd, void* data) {
+    return g_current ? g_current->Environment(cmd, data) : false;
+}
+
+void CoreHost::VideoTrampoline(const void* data, unsigned w, unsigned h, size_t pitch) {
+    if (g_current)
+        g_current->VideoRefresh(data, w, h, pitch);
+}
+
+void CoreHost::AudioSampleTrampoline(int16_t l, int16_t r) {
+    const int16_t s[2] = {l, r};
+    if (g_current)
+        g_current->AudioBatch(s, 1);
+}
+
+size_t CoreHost::AudioBatchTrampoline(const int16_t* data, size_t frames) {
+    return g_current ? g_current->AudioBatch(data, frames) : frames;
+}
+
+void CoreHost::InputPollTrampoline() {}
+
+int16_t CoreHost::InputStateTrampoline(unsigned port, unsigned device, unsigned index,
+                                       unsigned id) {
+    return g_current ? g_current->InputState(port, device, index, id) : 0;
+}
+
+uintptr_t CoreHost::HwFramebufferTrampoline() {
+    return (g_current && g_current->hw_hooks_.current_framebuffer)
+               ? g_current->hw_hooks_.current_framebuffer()
+               : 0;
+}
+
+retro_proc_address_t CoreHost::HwProcTrampoline(const char* sym) {
+    return (g_current && g_current->hw_hooks_.get_proc_address)
+               ? g_current->hw_hooks_.get_proc_address(sym)
+               : nullptr;
+}
+
+void CoreHost::LogTrampoline(enum retro_log_level level, const char* fmt, ...) {
+    char text[1024];
+    va_list args;
+    va_start(args, fmt);
+    std::vsnprintf(text, sizeof(text), fmt, args);
+    va_end(args);
+    // Cores end most lines with '\n'; the platform logger adds its own.
+    size_t len = std::strlen(text);
+    while (len > 0 && (text[len - 1] == '\n' || text[len - 1] == '\r'))
+        text[--len] = '\0';
+    PlatformLog(level, text);
+}
+
+}  // namespace cartucho

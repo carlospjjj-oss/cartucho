@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Cartucho</string>
+    <string name="settings">Configurações</string>
+    <string name="library_empty_title">Sua biblioteca está vazia</string>
+    <string name="library_empty_body">Escolha a pasta onde ficam seus jogos de GBA, Game Boy ou 3DS. O Cartucho encontra os jogos sozinho e lembra da pasta.</string>
+    <string name="add_folder">Adicionar pasta</string>
+    <string name="open_file">Abrir arquivo</string>
+    <string name="filter_all">Todos</string>
+    <string name="filter_recent">Recentes</string>
+    <string name="filter_favorites">Favoritos</string>
+    <string name="search_hint">Buscar jogo</string>
+    <string name="scanning">Procurando jogos…</string>
+    <string name="games_found">%1$d jogos</string>
+    <string name="favorite">Favoritar</string>
+    <string name="unfavorite">Remover dos favoritos</string>
+    <string name="remove_folder">Remover pasta da biblioteca</string>
+    <string name="folders">Pastas da biblioteca</string>
+    <string name="rescan">Atualizar biblioteca</string>
+
+    <string name="menu_resume">Continuar</string>
+    <string name="menu_save_state">Salvar estado</string>
+    <string name="menu_load_state">Carregar estado</string>
+    <string name="menu_fast_forward">Acelerar</string>
+    <string name="menu_filter">Filtro de imagem</string>
+    <string name="menu_screen_layout">Layout das telas</string>
+    <string name="menu_edit_controls">Editar controles</string>
+    <string name="menu_hide_controls">Esconder controles na tela</string>
+    <string name="menu_show_controls">Mostrar controles na tela</string>
+    <string name="menu_reset">Reiniciar jogo</string>
+    <string name="menu_quit">Sair do jogo</string>
+    <string name="slot_empty">Slot %1$d — vazio</string>
+    <string name="slot_used">Slot %1$d — %2$s</string>
+    <string name="state_saved">Estado salvo no slot %1$d</string>
+    <string name="state_loaded">Estado do slot %1$d carregado</string>
+    <string name="speed_normal">Velocidade normal</string>
+    <string name="speed_x">%1$dx mais rápido</string>
+    <string name="edit_controls_hint">Arraste os botões para mover. Toque em um botão e use − / + para o tamanho.</string>
+    <string name="done">Pronto</string>
+    <string name="reset_layout">Restaurar padrão</string>
+    <string name="error_title">Não foi possível abrir o jogo</string>
+    <string name="ok">OK</string>
+    <string name="unsupported_file">Este arquivo não é um jogo suportado.</string>
+    <string name="cia_not_supported">Arquivos .cia precisam ser instalados e ainda não são suportados. Use o jogo em formato .3ds, .cci ou .cxi (descriptografado).</string>
+    <string name="filter_sharp">Nítido (pixels)</string>
+    <string name="filter_smooth">Suave</string>
+    <string name="filter_sharp_smooth">Nítido suave (recomendado)</string>
+    <string name="filter_lcd">Tela LCD</string>
+    <string name="filter_scanlines">Linhas de TV antiga</string>
+    <string name="layout_auto">Automático (pela orientação)</string>
+    <string name="layout_stacked">Uma em cima da outra</string>
+    <string name="layout_side">Lado a lado</string>
+    <string name="layout_large">Tela grande + pequena</string>
+    <string name="layout_single">Só uma tela</string>
+    <string name="swap_screens">Trocar telas de lugar</string>
+</resources>

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory app:title="Imagem">
+        <ListPreference
+            app:key="filter"
+            app:title="Filtro de imagem"
+            app:entries="@array/filter_names"
+            app:entryValues="@array/filter_values"
+            app:defaultValue="2"
+            app:useSimpleSummaryProvider="true" />
+        <SwitchPreferenceCompat
+            app:key="integer_scale"
+            app:title="Escala inteira"
+            app:summary="Pixels todos do mesmo tamanho; pode deixar bordas pretas"
+            app:defaultValue="false" />
+        <SwitchPreferenceCompat
+            app:key="show_fps"
+            app:title="Mostrar FPS"
+            app:defaultValue="false" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="Controles na tela">
+        <SeekBarPreference
+            app:key="overlay_opacity"
+            app:title="Transparência dos botões"
+            app:min="15"
+            android:max="100"
+            app:defaultValue="60"
+            app:showSeekBarValue="true" />
+        <SeekBarPreference
+            app:key="overlay_scale"
+            app:title="Tamanho dos botões"
+            app:min="60"
+            android:max="150"
+            app:defaultValue="100"
+            app:showSeekBarValue="true" />
+        <SwitchPreferenceCompat
+            app:key="haptics"
+            app:title="Vibrar ao tocar"
+            app:defaultValue="true" />
+        <SwitchPreferenceCompat
+            app:key="hide_with_gamepad"
+            app:title="Esconder ao usar controle físico"
+            app:summary="Os botões voltam quando você toca na tela"
+            app:defaultValue="true" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="Acelerar">
+        <ListPreference
+            app:key="ff_speed"
+            app:title="Velocidade ao acelerar"
+            app:entries="@array/ff_names"
+            app:entryValues="@array/ff_values"
+            app:defaultValue="3"
+            app:useSimpleSummaryProvider="true" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="Nintendo 3DS">
+        <ListPreference
+            app:key="n3ds_resolution"
+            app:title="Resolução interna"
+            app:entries="@array/res_names"
+            app:entryValues="@array/res_values"
+            app:defaultValue="1"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:key="n3ds_layout"
+            app:title="Layout das telas"
+            app:entries="@array/layout_names"
+            app:entryValues="@array/layout_values"
+            app:defaultValue="auto"
+            app:useSimpleSummaryProvider="true" />
+        <SwitchPreferenceCompat
+            app:key="n3ds_new3ds"
+            app:title="Emular New 3DS"
+            app:summary="Mais memória e CPU; alguns jogos precisam"
+            app:defaultValue="true" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="Biblioteca">
+        <SwitchPreferenceCompat
+            app:key="download_covers"
+            app:title="Baixar capas dos jogos"
+            app:summary="Busca a capa pelo nome do arquivo (precisa de internet)"
+            app:defaultValue="true" />
+    </PreferenceCategory>
+</PreferenceScreen>

@@ -1,0 +1,150 @@
+# Builds the two emulator cores from their upstream sources with the Android
+# NDK, then the Cartucho APK around them. Cores are cached by upstream commit,
+# so only the first run (or a version bump) pays for the long 3DS build.
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  NDK_VERSION: "29.0.14206865"
+  # Upstream commits the cores are built from. Bump to update an emulator.
+  VBAM_REPO: visualboyadvance-m/visualboyadvance-m
+  VBAM_SHA: 07fb482d07b919b48fd63f8ac66546605ebf5afd
+  AZAHAR_REPO: azahar-emu/azahar
+  AZAHAR_SHA: 1edf59ef592a854ccc2a7405d9aade477b2a0b3d
+
+jobs:
+  core-gba:
+    name: Core GBA (VBA-M)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: out/libvbam_libretro.so
+          key: vbam-android-arm64-${{ env.VBAM_SHA }}-v1
+      - name: Install NDK
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: echo "y" | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" > /dev/null
+      - name: Fetch VBA-M
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git init -q vbam && cd vbam
+          git remote add origin "https://github.com/$VBAM_REPO.git"
+          git fetch -q --depth 1 origin "$VBAM_SHA" && git checkout -q FETCH_HEAD
+      - name: Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          NDK="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          cmake -S vbam -B build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28 -DANDROID_STL=c++_static \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_LIBRETRO=ON -DENABLE_QT=OFF -DENABLE_WX=OFF -DENABLE_SDL=OFF \
+            -DBUILD_TESTING=OFF -DENABLE_VULKAN=OFF -DENABLE_LUA=OFF -DENABLE_FFMPEG=OFF \
+            -DENABLE_LINK=OFF -DENABLE_NLS=OFF
+          cmake --build build --target vbam_libretro -j "$(nproc)"
+          mkdir -p out
+          cp "$(find build -name 'vbam_libretro*.so' | head -1)" out/libvbam_libretro.so
+          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" -s out/libvbam_libretro.so
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-gba
+          path: out/libvbam_libretro.so
+
+  core-3ds:
+    name: Core 3DS (Azahar)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: out/libazahar_libretro.so
+          key: azahar-android-arm64-${{ env.AZAHAR_SHA }}-v1
+      - name: Install NDK and CMake
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          echo "y" | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" "cmake;3.30.3" > /dev/null
+      - name: Fetch Azahar
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git init -q azahar && cd azahar
+          git remote add origin "https://github.com/$AZAHAR_REPO.git"
+          git fetch -q --depth 1 origin "$AZAHAR_SHA" && git checkout -q FETCH_HEAD
+          git submodule update --init --recursive --depth 1 -j 8
+      - name: Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          NDK="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          CMAKE="$ANDROID_SDK_ROOT/cmake/3.30.3/bin/cmake"
+          cd azahar
+          "$CMAKE" -DENABLE_LIBRETRO=ON -DANDROID_PLATFORM=android-28 \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_STL=c++_static -DANDROID_ABI=arm64-v8a -DCMAKE_BUILD_TYPE=Release \
+            . -B build
+          "$CMAKE" --build build --target azahar_libretro --config Release -j "$(nproc)"
+          mkdir -p ../out
+          cp "$(find build -name 'azahar_libretro*.so' | head -1)" ../out/libazahar_libretro.so
+          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" -s ../out/libazahar_libretro.so
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-3ds
+          path: out/libazahar_libretro.so
+
+  host-tests:
+    name: Native tests (Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Mesa (offscreen GLES)
+        run: sudo apt-get update -q && sudo apt-get install -y -q libegl-dev libgles-dev libegl-mesa0 > /dev/null
+      - name: Build and run
+        run: tools/host-test/run.sh
+
+  apk:
+    name: APK
+    needs: [core-gba, core-3ds]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: core-*
+          path: app/src/main/jniLibs/arm64-v8a
+          merge-multiple: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+      - name: Install NDK and CMake
+        run: echo "y" | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" "cmake;3.22.1" > /dev/null
+      - name: Build
+        env:
+          CARTUCHO_NDK_VERSION: ${{ env.NDK_VERSION }}
+        run: |
+          ls -la app/src/main/jniLibs/arm64-v8a
+          gradle --no-daemon assembleRelease
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/Cartucho-${{ github.run_number }}.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cartucho-apk
+          path: dist/*.apk
+      - name: Publish as the "latest" release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create latest dist/*.apk --title "Cartucho build ${{ github.run_number }}" \
+            --notes "APK gerado automaticamente a partir de ${{ github.sha }}." --latest
+
+permissions:
+  contents: write
