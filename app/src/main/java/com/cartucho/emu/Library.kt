@@ -18,6 +18,8 @@ data class Game(
     val entry: String? = null,
     /** File name of the archive holding it ("" for a plain file). */
     val archive: String = "",
+    /** A cover image found next to the game (Skraper / EmulationStation media), or "". */
+    val coverUri: String = "",
 ) {
     /** "Pokemon - Fire Red Version (USA, Europe) (Rev 1).gba" -> "Pokemon - Fire Red Version". */
     val title: String
@@ -39,14 +41,14 @@ data class Game(
 
     fun toJson(): JSONObject = JSONObject()
         .put("uri", uri).put("file", fileName).put("system", system.name).put("size", size)
-        .put("entry", entry ?: "").put("archive", archive)
+        .put("entry", entry ?: "").put("archive", archive).put("cover", coverUri)
 
     companion object {
         fun fromJson(o: JSONObject): Game? {
             val system = GameSystem.fromName(o.optString("system")) ?: return null
             return Game(
                 o.getString("uri"), o.getString("file"), system, o.optLong("size"),
-                o.optString("entry").ifEmpty { null }, o.optString("archive"),
+                o.optString("entry").ifEmpty { null }, o.optString("archive"), o.optString("cover"),
             )
         }
     }
@@ -114,7 +116,13 @@ class LibraryStore(private val context: Context) {
         val found = LinkedHashMap<String, Game>()
         for (folder in folders) {
             val root = DocumentFile.fromTreeUri(context, Uri.parse(folder)) ?: continue
-            walk(root, 0, found)
+            val tree = Tree()
+            walk(root, "", 0, tree)
+            val local = LocalCovers(context, tree.images, tree.gamelists)
+            for ((path, game) in tree.games) {
+                val cover = local.find(path)
+                found[game.uri] = if (cover != null) game.copy(coverUri = cover) else game
+            }
         }
         looseGames().forEach { found.putIfAbsent(it.uri, it) }
         val games = found.values.sortedBy { it.title.lowercase() }
@@ -122,26 +130,44 @@ class LibraryStore(private val context: Context) {
         return games
     }
 
-    private fun walk(dir: DocumentFile, depth: Int, out: MutableMap<String, Game>) {
-        if (depth > 4) return
+    /** What one library folder holds, by path relative to the folder. */
+    class Tree {
+        val games = mutableListOf<Pair<String, Game>>()
+        val images = HashMap<String, Uri>()        // lowercase relative path -> image
+        val gamelists = mutableListOf<Pair<String, Uri>>()  // directory -> gamelist.xml
+    }
+
+    private fun walk(dir: DocumentFile, path: String, depth: Int, tree: Tree) {
+        if (depth > 5) return
         val children = try { dir.listFiles() } catch (e: Exception) { return }
         for (f in children) {
+            val name = f.name ?: continue
+            val rel = if (path.isEmpty()) name else "$path/$name"
             if (f.isDirectory) {
-                walk(f, depth + 1, out)
+                walk(f, rel, depth + 1, tree)
                 continue
             }
-            val name = f.name ?: continue
+            val lower = name.lowercase()
+            if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp")) {
+                tree.images[rel.lowercase()] = f.uri
+                continue
+            }
+            if (lower == "gamelist.xml") {
+                tree.gamelists += path to f.uri
+                continue
+            }
             if (Archives.isArchive(name)) {
                 val inner = Archives.peek(context, f.uri, name) ?: continue
                 val innerName = inner.name.substringAfterLast('/')
                 val sys = GameSystem.forFileName(innerName) ?: continue
-                out[f.uri.toString()] = Game(f.uri.toString(), innerName, sys, f.length(), inner.name, name)
+                tree.games += rel to Game(f.uri.toString(), innerName, sys, f.length(), inner.name, name)
                 continue
             }
             val system = GameSystem.forFileName(name) ?: continue
             // .bin/.elf etc. are ambiguous; skip tiny files that cannot be games.
             if (f.length() < 1024) continue
-            out[f.uri.toString()] = Game(f.uri.toString(), name, system, f.length())
+            tree.games += rel to Game(f.uri.toString(), name, system, f.length())
         }
     }
+
 }

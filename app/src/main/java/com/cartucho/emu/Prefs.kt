@@ -35,6 +35,11 @@ class Prefs(context: Context) {
     /** The player's own cover repository ("user/repo" or a URL); empty for none. */
     val coversRepo: String get() = p.getString("covers_repo", "")!!
 
+    val ssUser: String get() = p.getString("ss_user", "")!!.trim()
+    val ssPassword: String get() = p.getString("ss_password", "")!!
+    val ssDevId: String get() = p.getString("ss_devid", "")!!.trim()
+    val ssDevPassword: String get() = p.getString("ss_devpassword", "")!!
+
     val downloadCovers: Boolean get() = p.getBoolean("download_covers", true)
 
     fun setFilter(value: Int) = p.edit().putString("filter", value.toString()).apply()

@@ -19,9 +19,13 @@ import java.util.concurrent.Executors
  * Box art for the library.
  *
  * - A cover the player picked for a game always wins.
+ * - Then an image already next to the game (Skraper / EmulationStation media,
+ *   gamelist.xml), found when the library is scanned (LocalCovers).
  * - Then the player's own cover repository, if set (Prefs.coversRepo): a
  *   GitHub repository ("user/repo") or any web folder holding
  *   <console>/<game name>.png, e.g. GBA/Eclat Pourpre.png.
+ * - Then ScreenScraper, when the player entered an account (by CRC for
+ *   GB/GBA, by name and size otherwise).
  * - Then the libretro thumbnail collection. Its names follow No-Intro
  *   ("Pokemon - FireRed Version (USA, Europe)"); files named differently
  *   ("Pokemon Fire Red (PT-BR).gba") are matched by similarity against the
@@ -88,6 +92,7 @@ class Covers(private val context: Context) {
         dir.listFiles()?.forEach { if (it.name.endsWith(".none") || it.name.startsWith("index_")) it.delete() }
         synchronized(indexes) { indexes.clear() }
         memory.evictAll()
+        ssPausedUntil = 0L
     }
 
     private fun key(game: Game) = game.system.name + "/" + sanitize(game.fileName.substringBeforeLast('.'))
@@ -97,6 +102,18 @@ class Covers(private val context: Context) {
         customFile(game).takeIf { it.exists() }?.let { return decode(it) }
         val file = File(dir, key.replace('/', '_') + ".png")
         val miss = File(file.path + ".none")
+        // An image found next to the game (Skraper, EmulationStation, own
+        // folders) beats anything downloaded.
+        if (game.coverUri.isNotEmpty()) {
+            val local = File(dir, key.replace('/', '_') + ".local")
+            try {
+                context.contentResolver.openInputStream(Uri.parse(game.coverUri))?.use { input ->
+                    local.outputStream().use { input.copyTo(it) }
+                }
+                decode(local)?.let { return it }
+            } catch (e: Exception) {
+            }
+        }
         if (file.exists()) return decode(file)
         if (!prefs.downloadCovers) return null
         if (miss.exists() && System.currentTimeMillis() - miss.lastModified() < 3L * 24 * 3600 * 1000) return null
@@ -105,6 +122,16 @@ class Covers(private val context: Context) {
         // The player's own repository first.
         for (url in customUrls(game)) {
             when (download(url, file)) {
+                Fetch.OK -> return decode(file)
+                Fetch.NETWORK -> offline = true
+                Fetch.MISSING -> {}
+            }
+        }
+        // ScreenScraper, when the player configured an account.
+        when (val url = screenScraperUrl(game)) {
+            null -> {}
+            "" -> offline = true  // not reachable now: try again later
+            else -> when (download(url, file)) {
                 Fetch.OK -> return decode(file)
                 Fetch.NETWORK -> offline = true
                 Fetch.MISSING -> {}
@@ -130,6 +157,118 @@ class Covers(private val context: Context) {
     }
 
     private enum class Fetch { OK, MISSING, NETWORK }
+
+    // --- ScreenScraper -------------------------------------------------------
+
+    private val ssLock = Any()
+    @Volatile private var ssPausedUntil = 0L
+
+    /**
+     * Box art URL from ScreenScraper: null when not configured or the game
+     * is unknown there, "" when it could not be asked right now (limits,
+     * login, network). One request at a time, as their API asks.
+     */
+    private fun screenScraperUrl(game: Game): String? {
+        val user = prefs.ssUser
+        val devId = prefs.ssDevId
+        if (user.isEmpty() && devId.isEmpty()) return null
+        if (System.currentTimeMillis() < ssPausedUntil) return ""
+        val system = when (game.system) {
+            GameSystem.GBA -> 12
+            GameSystem.GB -> if (game.fileName.endsWith(".gbc", true)) 10 else 9
+            GameSystem.NDS -> 15
+            GameSystem.N3DS -> 17
+        }
+        synchronized(ssLock) {
+            val params = linkedMapOf(
+                "devid" to devId, "devpassword" to prefs.ssDevPassword,
+                "softname" to "Cartucho", "output" to "json",
+                "ssid" to user, "sspassword" to prefs.ssPassword,
+                "systemeid" to system.toString(), "romtype" to "rom",
+                "romnom" to (if (game.archive.isNotEmpty()) game.archive else game.fileName),
+                "romtaille" to game.size.toString(),
+            )
+            crcOf(game)?.let { params["crc"] = String.format("%08X", it) }
+            val url = "https://api.screenscraper.fr/api2/jeuInfos.php?" +
+                params.entries.joinToString("&") { it.key + "=" + enc(it.value) }
+            val conn = try { URL(url).openConnection() as HttpURLConnection } catch (e: Exception) { return "" }
+            conn.connectTimeout = 10000
+            conn.readTimeout = 30000
+            conn.setRequestProperty("User-Agent", "Cartucho")
+            return try {
+                val code = conn.responseCode
+                val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                    ?.bufferedReader()?.use { it.readText() } ?: ""
+                when {
+                    code == 404 || body.contains("non trouv") -> {
+                        ssStatus("Funcionando")
+                        null
+                    }
+                    code != 200 || body.contains("Erreur de login") || !body.trimStart().startsWith("{") -> {
+                        // Login refused, quota, too many requests, closed API...:
+                        // stop asking for a while and say why in the settings.
+                        ssPausedUntil = System.currentTimeMillis() + 10 * 60 * 1000
+                        ssStatus(when {
+                            body.contains("Erreur de login") || code == 403 -> "Login recusado: confira usuário, senha e ID de desenvolvedor"
+                            code == 429 -> "Muitas consultas por minuto; tentando de novo em 10 min"
+                            code == 430 -> "Limite diário da sua conta atingido"
+                            code == 423 -> "ScreenScraper fora do ar no momento"
+                            else -> "Erro $code"
+                        })
+                        ""
+                    }
+                    else -> {
+                        ssStatus("Funcionando")
+                        pickBox(JSONObject(body))
+                    }
+                }
+            } catch (e: Exception) {
+                ""
+            } finally {
+                conn.disconnect()
+            }
+        }
+    }
+
+    /** The front box art, in the most fitting region available. */
+    private fun pickBox(json: JSONObject): String? {
+        val medias = json.optJSONObject("response")?.optJSONObject("jeu")?.optJSONArray("medias") ?: return null
+        val regions = listOf("br", "us", "wor", "eu", "ss", "jp")
+        var best: String? = null
+        var bestRank = Int.MAX_VALUE
+        for (i in 0 until medias.length()) {
+            val m = medias.optJSONObject(i) ?: continue
+            if (m.optString("type") != "box-2D") continue
+            val rank = regions.indexOf(m.optString("region")).let { if (it < 0) regions.size else it }
+            if (rank < bestRank) {
+                bestRank = rank
+                best = m.optString("url").ifEmpty { null }
+            }
+        }
+        return best
+    }
+
+    /** CRC32 of small plain ROMs (GB/GBA), the most reliable way to identify them. */
+    private fun crcOf(game: Game): Long? {
+        if (game.entry != null || game.size !in 1..64L * 1024 * 1024) return null
+        if (game.system != GameSystem.GBA && game.system != GameSystem.GB) return null
+        return try {
+            context.contentResolver.openInputStream(Uri.parse(game.uri))?.use { input ->
+                val crc = java.util.zip.CRC32()
+                val buf = ByteArray(1 shl 16)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    crc.update(buf, 0, n)
+                }
+                crc.value
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun ssStatus(text: String) = Prefs.raw(context).edit().putString("ss_status", text).apply()
 
     /** Candidate URLs in the player's cover repository, best first. */
     private fun customUrls(game: Game): List<String> {

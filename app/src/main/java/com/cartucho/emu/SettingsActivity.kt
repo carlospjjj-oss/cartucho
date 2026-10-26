@@ -99,6 +99,15 @@ class SettingsActivity : AppCompatActivity() {
 
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
             setPreferencesFromResource(R.xml.preferences, rootKey)
+            // Passwords: hidden while typing.
+            for (key in listOf("ss_password", "ss_devpassword")) {
+                findPreference<androidx.preference.EditTextPreference>(key)?.setOnBindEditTextListener {
+                    it.inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                        android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+                }
+            }
+            findPreference<Preference>("ss_status")?.summary =
+                Prefs.raw(requireContext()).getString("ss_status", null) ?: "Ainda não usado"
             findPreference<Preference>("backup_export")?.setOnPreferenceClickListener {
                 exportBackup.launch(Backup.defaultName()); true
             }

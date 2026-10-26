@@ -114,6 +114,33 @@
             app:defaultValue="true" />
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="ScreenScraper (capas)">
+        <Preference
+            app:key="ss_info"
+            app:selectable="false"
+            app:summary="O mesmo acervo que o Skraper usa. Crie uma conta grátis em screenscraper.fr. A API também pede uma ID de desenvolvedor, que o ScreenScraper dá por pedido no fórum deles. Depois de preencher, use Atualizar capas na biblioteca." />
+        <EditTextPreference
+            app:key="ss_user"
+            app:title="Usuário"
+            app:useSimpleSummaryProvider="true" />
+        <EditTextPreference
+            app:key="ss_password"
+            app:title="Senha"
+            app:summary="Toque para definir" />
+        <EditTextPreference
+            app:key="ss_devid"
+            app:title="ID de desenvolvedor"
+            app:useSimpleSummaryProvider="true" />
+        <EditTextPreference
+            app:key="ss_devpassword"
+            app:title="Senha de desenvolvedor"
+            app:summary="Toque para definir" />
+        <Preference
+            app:key="ss_status"
+            app:title="Situação"
+            app:selectable="false" />
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="Backup dos saves">
         <Preference
             app:key="backup_export"
