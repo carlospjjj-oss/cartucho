@@ -821,7 +821,7 @@ bool CoreHost::Environment(unsigned cmd, void* data) {
             return true;
 
         case RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE:
-            *static_cast<int*>(data) = 1 | 2;  // video and audio
+            *static_cast<int*>(data) = av_flags_;
             return true;
 
         case RETRO_ENVIRONMENT_GET_FASTFORWARDING:
@@ -904,7 +904,7 @@ void CoreHost::VideoRefresh(const void* data, unsigned width, unsigned height, s
 }
 
 size_t CoreHost::AudioBatch(const int16_t* data, size_t frames) {
-    if (!audio_muted_)
+    if (!audio_muted_ && !audio_suppressed_)
         audio_.Push(data, frames);
     return frames;
 }

@@ -168,11 +168,22 @@ void Session::SetupRewind() {
     PlatformLog(1, line);
 }
 
+bool Session::run_ahead_possible() {
+    const size_t size = host_->StateSize();
+    return size > 0 && size <= RunAhead::kMaxStateBytes && !host_->uses_hw_render();
+}
+
 void Session::RunOneFrame() {
-    host_->RunFrame();
+    // Never with a link session: replaying frames would replay link traffic.
+    const int link = link_state_;
+    run_ahead_.set_frames(link == 0 || link == 2 ? 0 : run_ahead_frames_.load());
+    run_ahead_.RunFrame(*host_);
     if (rewind_available_ && rewind_enabled_ && ++frames_since_capture_ >= rewind_interval_) {
         frames_since_capture_ = 0;
-        if (host_->SerializeTo(&state_buf_))
+        // Run-ahead already saved the real state; reuse it.
+        if (run_ahead_.have_real_state())
+            rewind_.Push(run_ahead_.real_state());
+        else if (host_->SerializeTo(&state_buf_))
             rewind_.Push(state_buf_);
     }
 }

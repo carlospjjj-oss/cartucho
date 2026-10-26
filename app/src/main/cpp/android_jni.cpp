@@ -527,3 +527,14 @@ JNI_FN(void, pushMic)(JNIEnv* env, jobject, jshortArray samples, jint count, jin
                               static_cast<unsigned>(rate));
     env->ReleaseShortArrayElements(samples, data, JNI_ABORT);
 }
+
+// --- Run-ahead ------------------------------------------------------------------
+
+JNI_FN(void, setRunAhead)(JNIEnv*, jobject, jint frames) {
+    if (g_session)
+        g_session->set_run_ahead(frames);
+}
+
+JNI_FN(jboolean, runAheadPossible)(JNIEnv*, jobject) {
+    return g_session && g_session->run_ahead_possible();
+}

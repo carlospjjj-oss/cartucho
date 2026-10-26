@@ -78,6 +78,10 @@ object NativeBridge {
     external fun micRate(): Int
     external fun pushMic(samples: ShortArray, count: Int, rate: Int)
 
+    // Run-ahead.
+    external fun setRunAhead(frames: Int)
+    external fun runAheadPossible(): Boolean
+
     // Network link (GBA / GB). linkStart and linkStop: GL thread.
     external fun linkSupported(): Boolean
     /** mode: 0 GBA cable, 1 GBA wireless adapter, 2 Game Boy cable. */

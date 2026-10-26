@@ -60,4 +60,12 @@
     <string-array name="nds_layout_values">
         <item>auto</item><item>top-bottom</item><item>left-right</item><item>largescreen-top</item><item>largescreen-bottom</item><item>top</item><item>bottom</item>
     </string-array>
+    <string-array name="run_ahead_names">
+        <item>Desligado</item>
+        <item>1 quadro (recomendado)</item>
+        <item>2 quadros</item>
+    </string-array>
+    <string-array name="run_ahead_values">
+        <item>0</item><item>1</item><item>2</item>
+    </string-array>
 </resources>

@@ -122,6 +122,11 @@ public:
     size_t PopAudio(int16_t* stereo, size_t frames) { return audio_.Pop(stereo, frames); }
     size_t QueuedAudioFrames() const { return audio_.Available(); }
     void SetAudioMuted(bool muted) { audio_muted_ = muted; }
+    // Drops audio without telling the core it is fast-forwarding (run-ahead).
+    void SetAudioSuppressed(bool on) { audio_suppressed_ = on; }
+    // What GET_AUDIO_VIDEO_ENABLE answers, so cores can skip work.
+    enum AvBits { kAvVideo = 1, kAvAudio = 2 };
+    void SetAvFlags(int flags) { av_flags_ = flags; }
 
     // Save states in memory (rewind). Empty / false when unsupported.
     bool SerializeTo(std::vector<uint8_t>* out);
@@ -215,6 +220,8 @@ private:
     VideoFrame frame_;
     AudioRing audio_;
     bool audio_muted_ = false;
+    bool audio_suppressed_ = false;
+    int av_flags_ = kAvVideo | kAvAudio;
 
     std::atomic<uint32_t> buttons_{0};
     std::atomic<int32_t> analog_[2]{{0}, {0}};  // packed x/y per stick

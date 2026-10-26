@@ -14,6 +14,7 @@
 #include "core_host.h"
 #include "gl_presenter.h"
 #include "rewind.h"
+#include "runahead.h"
 
 namespace cartucho {
 
@@ -68,6 +69,11 @@ public:
     // GL thread: after loading a state or resetting, the history is stale.
     void ClearRewind() { rewind_.Clear(); }
 
+    // Run-ahead frames (0 off). Any thread; applied on the next frame.
+    void set_run_ahead(int frames) { run_ahead_frames_ = frames; }
+    // Whether run-ahead can work for this core (small state, software video).
+    bool run_ahead_possible();
+
     // GL thread: the picture currently shown, as RGBA rows top to bottom.
     bool Screenshot(std::vector<uint8_t>* rgba, int* width, int* height);
 
@@ -101,6 +107,8 @@ private:
     void SetupRewind();
     void RunOneFrame();
     Rewind rewind_;
+    RunAhead run_ahead_;
+    std::atomic<int> run_ahead_frames_{0};
     bool rewind_available_ = false;
     std::atomic<bool> rewind_enabled_{true};
     std::atomic<bool> rewinding_{false};

@@ -14,6 +14,7 @@ add_library(cartucho SHARED
     gl_presenter.cpp
     resampler.cpp
     rewind.cpp
+    runahead.cpp
     session.cpp
 )
 

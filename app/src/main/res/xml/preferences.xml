@@ -53,6 +53,13 @@
             app:title="Voltar no tempo"
             app:summary="Segure « para desfazer os últimos segundos (GB, GBA e DS)"
             app:defaultValue="true" />
+        <ListPreference
+            app:key="run_ahead"
+            app:title="Run-ahead (menos atraso nos botões)"
+            app:summary="%s — GB e GBA. O jogo responde aos botões mais rápido; usa mais processador"
+            app:entries="@array/run_ahead_names"
+            app:entryValues="@array/run_ahead_values"
+            app:defaultValue="0" />
         <SwitchPreferenceCompat
             app:key="quick_buttons"
             app:title="Botões rápidos na tela"

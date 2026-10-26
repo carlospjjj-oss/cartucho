@@ -438,6 +438,7 @@ class GameActivity : AppCompatActivity() {
                 loaded = true
                 // Still on the GL thread: the core is ready for its codes.
                 NativeBridge.setRewindEnabled(prefs.rewind)
+                if (NativeBridge.runAheadPossible()) NativeBridge.setRunAhead(prefs.runAhead)
                 if (game.system != GameSystem.N3DS) cheats.apply()
                 val canRewind = prefs.rewind && NativeBridge.rewindAvailable()
                 runOnUiThread {
