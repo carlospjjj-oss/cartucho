@@ -25,10 +25,18 @@ object Tombstone {
             return ""
         }
         val fmt = SimpleDateFormat("dd/MM HH:mm:ss", Locale.US)
+        // Crashes from before this version was installed are already fixed
+        // (or at least not this version's): leave them out.
+        val installed = try {
+            context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime
+        } catch (e: Exception) {
+            0L
+        }
         val sb = StringBuilder()
         var shown = 0
         for (info in infos) {
             if (shown >= max) break
+            if (info.timestamp < installed) continue
             val reason = info.reason
             if (reason != ApplicationExitInfo.REASON_CRASH_NATIVE && reason != ApplicationExitInfo.REASON_CRASH &&
                 reason != ApplicationExitInfo.REASON_ANR) continue
