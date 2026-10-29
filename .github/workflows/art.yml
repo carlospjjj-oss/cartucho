@@ -1,0 +1,24 @@
+# Fetches the console photos (tools/art/photos.py) and commits them.
+name: Console photos
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  photos:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install pillow
+      - run: python3 tools/art/photos.py app/src/main/res/drawable-nodpi tools/art/PHOTO_CREDITS.md
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/res/drawable-nodpi tools/art/PHOTO_CREDITS.md
+          git diff --cached --quiet && exit 0
+          git commit -m "Console photos from Wikimedia Commons"
+          git push
