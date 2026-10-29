@@ -35,7 +35,7 @@ fi
 EGL_PLATFORM=surfaceless "$OUT/tv_test" "$OUT/fake_hw_core.so"
 if [ $# -ge 2 ]; then
     "$OUT/host_test" "$1" "$2" "$OUT/frame.ppm" 400 2>/dev/null
-    CARTUCHO_TEST_FD=1 "$OUT/host_test" "$1" "$2" "$OUT/frame-fd.ppm" 60 2>/dev/null | grep -E "load game|FAIL|passed"
+    CARTUCHO_TEST_FD=1 "$OUT/host_test" "$1" "$2" "$OUT/frame-fd.ppm" 200 2>/dev/null | grep -E "load game|FAIL|passed"
     "$OUT/rewind_test" "$1" "$2" 2>/dev/null
     # Run-ahead: off for the first two seconds, then (after a passing
     # self-check) exactly the normal run's picture N frames later. Checked on

@@ -14,6 +14,98 @@ index 5f5b464..918d419 100644
  endif()
  
  add_subdirectory(src/wx)
+diff --git a/src/core/gb/gb.cpp b/src/core/gb/gb.cpp
+index a53f218..1914289 100644
+--- a/src/core/gb/gb.cpp
++++ b/src/core/gb/gb.cpp
+@@ -6469,6 +6469,15 @@ unsigned int gbWriteSaveState(uint8_t* data)
+     utilWriteIntMem(data, inBios);
+ 
+     utilWriteDataMem(data, gbSaveGameStruct);
++    // Same layout as the file states: the CGB / SGB flags and the other two
++    // parts (banks, HDMA, speed, I/O registers, palettes). Leaving these out
++    // made every libretro state come back with the scroll, palettes, banks
++    // and CPU speed of power-on: garbled pictures after loading, rewinding
++    // or run-ahead.
++    utilWriteIntMem(data, gbCgbMode ? 1 : 0);
++    utilWriteDataMem(data, gbSaveGameStruct2);
++    utilWriteIntMem(data, gbSgbMode ? 1 : 0);
++    utilWriteDataMem(data, gbSaveGameStruct3);
+ 
+     utilWriteMem(data, &IFF, 2);
+ 
+@@ -6567,6 +6576,20 @@ bool gbReadSaveState(const uint8_t* data)
+     inBios = ib;
+ 
+     utilReadDataMem(data, gbSaveGameStruct);
++    const int cgbModeOnWire = utilReadIntMem(data);
++    utilReadDataMem(data, gbSaveGameStruct2);
++    const int sgbModeOnWire = utilReadIntMem(data);
++    utilReadDataMem(data, gbSaveGameStruct3);
++    // Only the low byte is the flag (see the file loader).
++    const bool stateIsCgb = (cgbModeOnWire & 0xff) != 0;
++    if (stateIsCgb != gbCgbMode) {
++        systemMessage(MSG_UNSUPPORTED_VB_SGM,
++                      N_("Cannot load a %s save state while running as %s"),
++                      stateIsCgb ? "Game Boy Color" : "Game Boy",
++                      gbCgbMode ? "Game Boy Color" : "Game Boy");
++        return false;
++    }
++    gbSgbMode = (sgbModeOnWire & 0xff) != 0;
+ 
+     // Correct crash when loading color gameboy save in regular gameboy type.
+     if (gbCgbMode) {
+@@ -6758,6 +6781,50 @@ bool gbReadSaveState(const uint8_t* data)
+ }
+ #endif /* __LIBRETRO__ */
+ 
++// Cartucho: timing state this core keeps outside the save state structs
++// (cycle counter, timer reload, OAM DMA, interrupt dispatch, serial, speed
++// switch, per-pixel register latches). Without it a loaded state drifts a
++// few cycles from where it was saved, which run-ahead and rewind expose.
++// Appended by the libretro frontend behind its own marker.
++#define CARTUCHO_GB_HIDDEN(X) \
++    X(clockTicks) X(gbRemainingClockTicks) X(gbOldClockTicks) X(gbIntBreak) \
++    X(gbInterruptLaunched) X(gbIrqDispatchStage) X(gbIrqDispatchArmed) X(gbIrqDispatchIE) \
++    X(gbScxMode3Extra) X(gbScxMode3ExtraDelayed) X(gbCycleCounter) X(gbTimaReloadPending) \
++    X(gbTimaReloadCycle) X(gbTimaReloadAppliedCycle) X(gbOamDmaBlockFrom) X(gbOamDmaBlockUntil) \
++    X(gbOamDmaCopyPending) X(gbOamDmaCopySource) X(gbOamDmaStaging) X(gbMemAccessCycleAdj) \
++    X(gbOamDmaTransferStart) X(gbOamDmaSrcBusClass) X(gbOamDmaOverride) X(gbOamDmaOverridden) \
++    X(gbSerialMasterWait) X(gbSpeedSwitchPending) X(gbSpeedSwitchDivCarry) X(gbSerialShiftIn) \
++    X(gbSerialEdgesLeft) X(gbSerialPeriodCycles) X(gbLcdOnGlitchMode0) X(gbLastOamRaiseCycle) \
++    X(gbLastTimerRaiseCycle) X(gbLastRetiCycle) X(gbIrqDecisionCycle) X(gbVblankEndOamIrqPending) \
++    X(gbCgbDmgCompat) X(gbIncreased) X(gbInternalTimer) X(gbScreenTicks) X(gbSCYLine) \
++    X(gbLcdcLine) X(gbSCXLine) X(gbBgpLine) X(gbObp0Line) X(gbObp1Line) X(gbSpritesTicks) \
++    X(gbOAMLatch) X(gbLYChangeHappened) X(gbLCDChangeHappened) X(gbLine99Ticks) \
++    X(gbRegisterLYLCDCOffOn) X(gbWhiteScreen) X(register_LCDCBusy) X(gbInt48Signal) \
++    X(gbInterruptWait) X(gbDivTicks) X(gbTimerTicks) X(gbTimerClockTicks)
++
++size_t gbCartuchoHiddenSize()
++{
++    size_t n = 0;
++#define CARTUCHO_SIZE(v) n += sizeof(v);
++    CARTUCHO_GB_HIDDEN(CARTUCHO_SIZE)
++#undef CARTUCHO_SIZE
++    return n;
++}
++
++void gbCartuchoHiddenSave(uint8_t* out)
++{
++#define CARTUCHO_SAVE(v) memcpy(out, &v, sizeof(v)); out += sizeof(v);
++    CARTUCHO_GB_HIDDEN(CARTUCHO_SAVE)
++#undef CARTUCHO_SAVE
++}
++
++void gbCartuchoHiddenLoad(const uint8_t* in)
++{
++#define CARTUCHO_LOAD(v) memcpy(&v, in, sizeof(v)); in += sizeof(v);
++    CARTUCHO_GB_HIDDEN(CARTUCHO_LOAD)
++#undef CARTUCHO_LOAD
++}
++
+ struct EmulatedSystem GBSystem = {
+     // emuMain
+     gbEmulate,
 diff --git a/src/core/gba/gbaLink.cpp b/src/core/gba/gbaLink.cpp
 index 438dd01..e9571db 100644
 --- a/src/core/gba/gbaLink.cpp
@@ -152,10 +244,15 @@ index 0000000..c9e4cf7
 +#pragma once
 +#define gettext(x) (x)
 diff --git a/src/libretro/libretro.cpp b/src/libretro/libretro.cpp
-index 2b936e8..93f7744 100644
+index 2b936e8..15e71d8 100644
 --- a/src/libretro/libretro.cpp
 +++ b/src/libretro/libretro.cpp
-@@ -28,6 +28,7 @@
+@@ -1,3 +1,4 @@
++#include <vector>
+ #include <cstdarg>
+ #include <cstdio>
+ #include <cstdlib>
+@@ -28,6 +29,7 @@
  #include "core/gba/gbaGlobals.h"
  #include "core/gba/gbaRtc.h"
  #include "core/gba/gbaSound.h"
@@ -163,25 +260,41 @@ index 2b936e8..93f7744 100644
  
  #if __STDC_WANT_SECURE_LIB__
  #define snprintf sprintf_s
-@@ -1839,6 +1840,17 @@ void retro_run(void)
+@@ -1839,6 +1841,33 @@ void retro_run(void)
  
  static unsigned serialize_size = 0;
  
-+// Cartucho: the GBA event scheduler (IRQ delivery, halt wake-up, HBlank
-+// DMA, SIO) is not part of CPUWriteState; without it a loaded state
-+// resumes with stale or missing events, which run-ahead and rewind (a load
-+// every frame) turn into freezes. It goes after the core's state behind a
-+// marker, so states without it still load.
++// Cartucho: extra state after the core's own, behind a marker so states
++// without it still load.
++//  - GBA: the event scheduler (IRQ delivery, halt wake-up, HBlank DMA, SIO)
++//    is not part of CPUWriteState; without it a loaded state resumes with
++//    stale or missing events, which run-ahead and rewind (a load every
++//    frame) turn into freezes.
++//  - GB: the picture being drawn. A frame ends a little after VBlank, so
++//    the next one shows the lines drawn before the save; without them they
++//    would come from whatever was on screen before loading.
 +static constexpr uint32_t kCartuchoSchedMagic = 0x44484353;  // "SCHD"
++static constexpr uint32_t kCartuchoPixMagic = 0x32585047;    // "GPX2"
++size_t gbCartuchoHiddenSize();
++void gbCartuchoHiddenSave(uint8_t* out);
++void gbCartuchoHiddenLoad(const uint8_t* in);
++static size_t CartuchoPixBytes()
++{
++    return g_pix ? (size_t)systemWidth * systemHeight * (systemColorDepth >> 3) : 0;
++}
 +static size_t CartuchoSchedBytes()
 +{
-+    return type == IMAGE_GBA ? 4 + gbaScheduler::SaveStateSize() : 0;
++    if (type == IMAGE_GBA)
++        return 4 + gbaScheduler::SaveStateSize();
++    if (type == IMAGE_GB && CartuchoPixBytes())
++        return 12 + CartuchoPixBytes() + gbCartuchoHiddenSize();
++    return 0;
 +}
 +
  size_t retro_serialize_size(void)
  {
      if (!core)
-@@ -1852,25 +1864,45 @@ size_t retro_serialize_size(void)
+@@ -1852,25 +1881,82 @@ size_t retro_serialize_size(void)
      if (enable_variable_serialization_size) {
          serialize_size = core->emuWriteState(serializationBuffer);
      }
@@ -209,8 +322,18 @@ index 2b936e8..93f7744 100644
 +    if (extra) {
 +        // At the very end, where retro_unserialize looks for it.
 +        uint8_t* tail = (uint8_t*)data + size - extra;
-+        memcpy(tail, &kCartuchoSchedMagic, 4);
-+        gbaScheduler::SaveState(tail + 4);
++        if (type == IMAGE_GBA) {
++            memcpy(tail, &kCartuchoSchedMagic, 4);
++            gbaScheduler::SaveState(tail + 4);
++        } else {
++            const uint32_t bytes = (uint32_t)CartuchoPixBytes();
++            const uint32_t hidden = (uint32_t)gbCartuchoHiddenSize();
++            memcpy(tail, &kCartuchoPixMagic, 4);
++            memcpy(tail + 4, &bytes, 4);
++            memcpy(tail + 8, &hidden, 4);
++            memcpy(tail + 12, g_pix, bytes);
++            gbCartuchoHiddenSave(tail + 12 + bytes);
++        }
 +    }
 +    return true;
  }
@@ -220,6 +343,33 @@ index 2b936e8..93f7744 100644
      if (!core)
          return false;
 -    return core->emuReadState((uint8_t*)data);
++    if (type == IMAGE_GB) {
++        // The GB loader resets the machine before reading; a state it then
++        // rejects (another format, a GB state on GBC) would leave the game
++        // reset. Keep the running state to put back.
++        static std::vector<uint8_t> before;
++        before.resize(serializationBufferSize);
++        const unsigned kept = core->emuWriteState(before.data());
++        if (!core->emuReadState((uint8_t*)data)) {
++            if (kept)
++                core->emuReadState(before.data());
++            return false;
++        }
++        const size_t extra = CartuchoSchedBytes();
++        if (extra && size >= extra) {
++            const uint8_t* tail = (const uint8_t*)data + size - extra;
++            uint32_t magic = 0, bytes = 0, hidden = 0;
++            memcpy(&magic, tail, 4);
++            memcpy(&bytes, tail + 4, 4);
++            memcpy(&hidden, tail + 8, 4);
++            if (magic == kCartuchoPixMagic && bytes == CartuchoPixBytes() &&
++                hidden == gbCartuchoHiddenSize()) {
++                memcpy(g_pix, tail + 12, bytes);
++                gbCartuchoHiddenLoad(tail + 12 + bytes);
++            }
++        }
++        return true;
++    }
 +    if (!core->emuReadState((uint8_t*)data))
 +        return false;
 +    const size_t extra = CartuchoSchedBytes();
