@@ -3,7 +3,10 @@
 set -x
 mkdir -p shots
 PKG=com.cartucho.emu
-adb install -r -g app.apk
+adb wait-for-device
+adb shell 'while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 2; done'
+sleep 20
+adb install -r -g app.apk 2>&1 | tee shots/install.txt
 adb shell appops set $PKG MANAGE_EXTERNAL_STORAGE allow
 adb shell mkdir -p /sdcard/Roms
 adb push roms/. /sdcard/Roms/
@@ -12,8 +15,10 @@ shot() { sleep "${2:-2}"; adb exec-out screencap -p > "shots/$1.png"; }
 key() { adb shell input keyevent "$@"; sleep 0.6; }
 start() {
   adb shell am force-stop $PKG
-  adb shell am start -n $PKG/.LibraryActivity --es cartucho_test_folder /sdcard/Roms --es cartucho_test_style "$1"
-  sleep 8
+  adb shell am start -W -n $PKG/.LibraryActivity --es cartucho_test_folder /sdcard/Roms --es cartucho_test_style "$1" \
+    >> shots/am.txt 2>&1
+  sleep 12
+  adb shell dumpsys window | grep -E "mCurrentFocus|mFocusedApp" >> shots/am.txt
 }
 
 # Landscape (rotation off, user rotation 90°).
@@ -55,5 +60,5 @@ shot 11-list-portrait 3
 # The grid look still there.
 start grid
 shot 12-grid-portrait 3
-adb logcat -d -t 400 > shots/logcat.txt || true
+adb logcat -d > shots/logcat.txt || true
 exit 0
