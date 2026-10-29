@@ -40,14 +40,14 @@ $CXX devices_test.cpp $SRC/core_host.cpp -ldl -o "$OUT/devices_test"
 $CXX runahead_test.cpp $SRC/runahead.cpp $SRC/core_host.cpp -ldl -o "$OUT/runahead_test"
 $CXX link_test.cpp $SRC/core_host.cpp -ldl -lpthread -o "$OUT/link_test"
 $CXX recorder_test.cpp $SRC/recorder.cpp -lpthread -o "$OUT/recorder_test"
-# A PlayStation-like disc as .cue/.bin and as .chd must hash the same.
-"$OUT/chd_test" roms/disc.cue roms/disc.chd
 $CXX achievements_test.cpp $SRC/achievements.cpp $SRC/core_host.cpp $RCLIB -ldl -lpthread -o "$OUT/achievements_test"
 $CXX chd_test.cpp $RCLIB -lpthread -o "$OUT/chd_test"
 
 "$OUT/pacer_test"
 "$OUT/resampler_test"
 "$OUT/recorder_test"
+# A PlayStation-like disc as .cue/.bin and as .chd must hash the same.
+"$OUT/chd_test" roms/disc.cue roms/disc.chd
 # If the GLES test crashes, run it again under gdb for a stack trace.
 if ! EGL_PLATFORM=surfaceless "$OUT/gl_test" "$OUT/fake_hw_core.so"; then
     if command -v gdb > /dev/null; then
