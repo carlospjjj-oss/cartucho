@@ -96,29 +96,6 @@ class ConsoleUi(private val context: Context, private val host: Host) {
     private var shown: List<Game> = emptyList()
     private var selected = 0
 
-    init {
-        sounds.effectsOn = prefs.uiSounds
-        sounds.musicOn = prefs.uiMusic
-        background.animating = prefs.uiAnimatedBackground
-        root.setBackgroundColor(Color.rgb(11, 10, 20))
-        root.addView(background, FrameLayout.LayoutParams(MATCH, MATCH))
-        root.addView(home, FrameLayout.LayoutParams(MATCH, MATCH))
-        root.addView(list, FrameLayout.LayoutParams(MATCH, MATCH))
-        hints.apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(20), 0, dp(20), 0)
-            background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
-                intArrayOf(Color.argb(170, 0, 0, 0), Color.TRANSPARENT))
-        }
-        root.addView(hints, FrameLayout.LayoutParams(MATCH, dp(56), Gravity.BOTTOM))
-        root.addView(statusBar(), FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.END).apply {
-            topMargin = dp(14); rightMargin = dp(20)
-        })
-        root.fitsSystemWindows = true
-        list.visibility = View.GONE
-        buildHome()
-    }
 
     // --- Data ------------------------------------------------------------------------
 
@@ -948,6 +925,35 @@ class ConsoleUi(private val context: Context, private val host: Host) {
         val level = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
         val charging = bm?.isCharging == true
         battery.text = if (level in 0..100) "  ·  ${if (charging) "⚡" else "🔋"} $level%" else ""
+    }
+
+    /** Builds the screens; runs last in the constructor, once every view field exists. */
+    private fun setup() {
+        sounds.effectsOn = prefs.uiSounds
+        sounds.musicOn = prefs.uiMusic
+        background.animating = prefs.uiAnimatedBackground
+        root.setBackgroundColor(Color.rgb(11, 10, 20))
+        root.addView(background, FrameLayout.LayoutParams(MATCH, MATCH))
+        root.addView(home, FrameLayout.LayoutParams(MATCH, MATCH))
+        root.addView(list, FrameLayout.LayoutParams(MATCH, MATCH))
+        hints.apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(20), 0, dp(20), 0)
+            background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
+                intArrayOf(Color.argb(170, 0, 0, 0), Color.TRANSPARENT))
+        }
+        root.addView(hints, FrameLayout.LayoutParams(MATCH, dp(56), Gravity.BOTTOM))
+        root.addView(statusBar(), FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.END).apply {
+            topMargin = dp(14); rightMargin = dp(20)
+        })
+        root.fitsSystemWindows = true
+        list.visibility = View.GONE
+        buildHome()
+    }
+
+    init {
+        setup()
     }
 
     companion object {
