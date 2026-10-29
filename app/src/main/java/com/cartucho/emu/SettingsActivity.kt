@@ -249,6 +249,13 @@ class SettingsActivity : AppCompatActivity() {
                 Prefs.raw(requireContext()).getString("ss_status", null) ?: "Ainda não usado"
             findPreference<Preference>("tgdb_status")?.summary =
                 Prefs.raw(requireContext()).getString("tgdb_status", null) ?: "Ainda não usado"
+            findPreference<Preference>("photo_credits")?.setOnPreferenceClickListener {
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle("Fotos dos consoles")
+                    .setMessage("Fotos de Evan-Amos, do Wikimedia Commons (commons.wikimedia.org), com o fundo removido e o tamanho reduzido.\n\nGame-Boy-FL.jpg — Evan-Amos, Public domain\nNintendo-Game-Boy-Advance-Purple-FL.jpg — Evan-Amos, Public domain\nNintendo-DS-Fat-Blue.jpg — Evan-Amos, Public domain\nNintendo-3DS-AquaOpen.jpg — Evan-Amos, Public domain\nNES-Console-Set.png — Evan-Amos, Public domain\nSNES-Mod1-Console-Set.png — Evan-Amos, CC BY-SA 3.0\nSega-Mega-Drive-JP-Mk1-Console-Set.png — Evan-Amos, Public domain\nSega-Master-System-Set.png — Evan-Amos, Public domain\nGame-Gear-Handheld.jpg — Evan-Amos, Public domain\nPSX-Console-wController.png — Evan-Amos, Public domain\n\nAs marcas nos aparelhos pertencem aos seus donos; o Cartucho não tem ligação com eles.")
+                    .setPositiveButton(android.R.string.ok, null).show()
+                true
+            }
             findPreference<Preference>("backup_export")?.setOnPreferenceClickListener {
                 exportBackup.launch(Backup.defaultName()); true
             }

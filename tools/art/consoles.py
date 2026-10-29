@@ -260,7 +260,10 @@ def to_svg(shapes, size=200, prefix="a"):
 if __name__ == "__main__":
     res = sys.argv[1]
     os.makedirs(res, exist_ok=True)
+    # The consoles themselves use photos now (photos.py); only the collections ship as drawings.
     for name, shapes in ART.items():
+        if name not in ("recent", "fav", "all", "search"):
+            continue
         with open(os.path.join(res, f"art_{name}.xml"), "w") as f:
             f.write(to_vd(shapes))
     if len(sys.argv) > 2:

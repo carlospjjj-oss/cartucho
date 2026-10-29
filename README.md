@@ -146,6 +146,11 @@ jogos. Jogos de 3DS precisam estar **descriptografados**.
 O código do Cartucho é GPL-2.0 ou posterior. Os emuladores mantêm as licenças
 de cada projeto (tabela acima) e são distribuídos como bibliotecas separadas.
 
+As fotos dos consoles são de Evan-Amos, do Wikimedia Commons (domínio público,
+e CC BY-SA 3.0 a do Super Nintendo); a lista está em
+[`tools/art/PHOTO_CREDITS.md`](tools/art/PHOTO_CREDITS.md). As marcas que
+aparecem nos aparelhos pertencem aos seus donos.
+
 ## Estrutura
 
 - `app/src/main/cpp/` — o motor nativo:

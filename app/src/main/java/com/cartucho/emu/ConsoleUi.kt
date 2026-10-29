@@ -67,7 +67,7 @@ class ConsoleUi(private val context: Context, private val host: Host) {
         val games: List<Game>,
         val subtitle: String,
     ) {
-        /** The card's picture (an original drawing, see tools/art/consoles.py). */
+        /** The card's picture: a photo of the console (tools/art/photos.py) or a drawing for the collections. */
         val art get() = artFor(key)
     }
 
@@ -982,16 +982,16 @@ class ConsoleUi(private val context: Context, private val host: Host) {
 
     companion object {
         fun artFor(key: String) = when (key) {
-            "GB" -> R.drawable.art_gb
-            "GBA" -> R.drawable.art_gba
-            "NDS" -> R.drawable.art_nds
-            "N3DS" -> R.drawable.art_n3ds
-            "NES" -> R.drawable.art_nes
-            "SNES" -> R.drawable.art_snes
-            "MD" -> R.drawable.art_md
-            "SMS" -> R.drawable.art_sms
-            "GG" -> R.drawable.art_gg
-            "PS1" -> R.drawable.art_ps1
+            "GB" -> R.drawable.photo_gb
+            "GBA" -> R.drawable.photo_gba
+            "NDS" -> R.drawable.photo_nds
+            "N3DS" -> R.drawable.photo_n3ds
+            "NES" -> R.drawable.photo_nes
+            "SNES" -> R.drawable.photo_snes
+            "MD" -> R.drawable.photo_md
+            "SMS" -> R.drawable.photo_sms
+            "GG" -> R.drawable.photo_gg
+            "PS1" -> R.drawable.photo_ps1
             "recent" -> R.drawable.art_recent
             "fav" -> R.drawable.art_fav
             "all" -> R.drawable.art_all

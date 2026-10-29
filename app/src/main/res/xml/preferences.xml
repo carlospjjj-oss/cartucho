@@ -338,5 +338,9 @@
             app:dialogTitle="Repositório de capas"
             app:dialogMessage="Um repositório do GitHub (ex.: seu-usuario/capas) ou o endereço de uma pasta na web. Coloque as imagens em pastas por console com o nome do jogo: GBA/Eclat Pourpre.png, DS/..., 3DS/..., GB/... (PNG ou JPG). Ele é consultado antes do acervo padrão. Depois de mudar, use Atualizar capas na biblioteca."
             app:useSimpleSummaryProvider="true" />
+        <Preference
+            app:key="photo_credits"
+            app:title="Créditos das fotos dos consoles"
+            app:summary="Fotos do Wikimedia Commons (Evan-Amos)" />
     </PreferenceCategory>
 </PreferenceScreen>
