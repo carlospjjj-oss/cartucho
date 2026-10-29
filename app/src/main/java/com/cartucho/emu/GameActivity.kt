@@ -56,6 +56,8 @@ class GameActivity : AppCompatActivity() {
     private lateinit var tvMode: TvMode
     private var onTv = false
     private lateinit var tvLabel: TextView
+    private lateinit var recLabel: TextView
+    private var recorder: VideoRecorder? = null
     private var lastRumble = 0
     private val micPermission = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
@@ -204,6 +206,17 @@ class GameActivity : AppCompatActivity() {
             visibility = View.GONE
         }
         root.addView(tvLabel, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER))
+        recLabel = TextView(this).apply {
+            text = "●  REC"
+            setTextColor(0xFFFF3B30.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setShadowLayer(4f, 0f, 1f, Color.BLACK)
+            visibility = View.GONE
+        }
+        root.addView(recLabel, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
+            topMargin = dp(10)
+        })
         root.addView(overlay, FrameLayout.LayoutParams(MATCH, MATCH))
 
         osd = TextView(this).apply {
@@ -468,6 +481,7 @@ class GameActivity : AppCompatActivity() {
 
     override fun onPause() {
         resumed = false
+        recorder?.takeIf { it.running }?.stop()
         countPlayTime()
         if (::devices.isInitialized) devices.stop()
         if (::tvMode.isInitialized) tvMode.pause()
@@ -497,6 +511,17 @@ class GameActivity : AppCompatActivity() {
     private fun quit() {
         if (!loaded) {
             finish()
+            return
+        }
+        // A video being recorded is finished first (the process ends after).
+        val rec = recorder
+        if (rec != null && rec.running) {
+            rec.stop()
+            showMessage("Salvando o vídeo…")
+            Thread {
+                rec.join(8000)
+                runOnUiThread { quit() }
+            }.start()
             return
         }
         NativeBridge.setPaused(true)
@@ -687,6 +712,30 @@ class GameActivity : AppCompatActivity() {
         }
     }
 
+    /** Records the game's picture and sound to Movies/Cartucho. */
+    private fun toggleRecording() {
+        val current = recorder
+        if (current != null && current.running) {
+            current.stop()
+            return
+        }
+        val rec = VideoRecorder(applicationContext, game.title)
+        recorder = rec
+        glView.queueEvent {
+            NativeBridge.recStart()
+            runOnUiThread {
+                recLabel.visibility = View.VISIBLE
+                showMessage("Gravando… Menu → Parar gravação")
+                rec.start { message ->
+                    runOnUiThread {
+                        if (recorder === rec) recLabel.visibility = View.GONE
+                        showMessage(message)
+                    }
+                }
+            }
+        }
+    }
+
     private fun showAchievements() {
         val lines = NativeBridge.raList().map { it.split('|') }
         if (lines.isEmpty()) {
@@ -778,6 +827,7 @@ class GameActivity : AppCompatActivity() {
             cheats.showDialog(this, { b -> modal.show(b) }) { glView.queueEvent { cheats.apply() } }
         }
         if (achievementsOn) items += "🏆 Conquistas" to { showAchievements() }
+        items += (if (recorder?.running == true) "⏹ Parar gravação" else "🎬 Gravar vídeo") to { toggleRecording() }
         items += "Captura de tela" to { takeScreenshot() }
         items += getString(R.string.menu_edit_controls) to { startEditing() }
         items += (if (overlay.visibility == View.VISIBLE) getString(R.string.menu_hide_controls)

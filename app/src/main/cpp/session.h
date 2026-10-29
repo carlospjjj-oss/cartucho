@@ -13,6 +13,7 @@
 
 #include "achievements.h"
 #include "core_host.h"
+#include "recorder.h"
 #include "gl_presenter.h"
 #include "rewind.h"
 #include "runahead.h"
@@ -99,6 +100,9 @@ public:
 
     // RetroAchievements for this game (null when not signed in). GL thread.
     void set_achievements(std::shared_ptr<Achievements> ra) { ra_ = std::move(ra); }
+    // Video recording: pictures (and, through the host, sound) go to `rec`
+    // while it is active. GL thread.
+    void set_recorder(std::shared_ptr<Recorder> rec);
 
     // Measured emulation speed (frames per second) over the last second.
     double measured_fps() const { return measured_fps_; }
@@ -106,6 +110,9 @@ public:
 private:
     std::unique_ptr<CoreHost> host_;
     std::shared_ptr<Achievements> ra_;
+    std::shared_ptr<Recorder> rec_;
+    std::vector<uint8_t> rec_hw_;  // read-back of hardware frames for recording
+    void RecordPicture(int frames);
     GlPresenter presenter_;
     FramePacer pacer_;
     int width_ = 1, height_ = 1;

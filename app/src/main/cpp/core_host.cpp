@@ -931,6 +931,8 @@ void CoreHost::VideoRefresh(const void* data, unsigned width, unsigned height, s
 size_t CoreHost::AudioBatch(const int16_t* data, size_t frames) {
     if (!audio_muted_ && !audio_suppressed_)
         audio_.Push(data, frames);
+    if (audio_tap_ && !audio_suppressed_)
+        audio_tap_(audio_tap_user_, data, frames);
     return frames;
 }
 

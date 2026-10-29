@@ -20,7 +20,7 @@ for c in $RA/src/{api,client,hash,libretro,runtime,util}/*.c; do
     [ "$o" -nt "$c" ] || gcc -c -O1 -w $RAFLAGS -I$SRC "$c" -o "$o"
 done
 ar rcs "$OUT/librcheevos.a" "$OUT"/rcheevos/*.o
-SESSION="$SRC/session.cpp $SRC/achievements.cpp $RAFLAGS $OUT/librcheevos.a"
+SESSION="$SRC/session.cpp $SRC/achievements.cpp $SRC/recorder.cpp $RAFLAGS $OUT/librcheevos.a"
 
 $CXX pacer_test.cpp $SESSION $SRC/rewind.cpp $SRC/runahead.cpp $SRC/core_host.cpp $SRC/gl_presenter.cpp -lGLESv2 -lz -ldl -lpthread -o "$OUT/pacer_test"
 $CXX resampler_test.cpp $SRC/resampler.cpp $SRC/core_host.cpp -ldl -o "$OUT/resampler_test"
@@ -32,10 +32,12 @@ $CXX rewind_test.cpp $SRC/rewind.cpp $SRC/core_host.cpp -lz -ldl -lpthread -o "$
 $CXX devices_test.cpp $SRC/core_host.cpp -ldl -o "$OUT/devices_test"
 $CXX runahead_test.cpp $SRC/runahead.cpp $SRC/core_host.cpp -ldl -o "$OUT/runahead_test"
 $CXX link_test.cpp $SRC/core_host.cpp -ldl -lpthread -o "$OUT/link_test"
+$CXX recorder_test.cpp $SRC/recorder.cpp -lpthread -o "$OUT/recorder_test"
 $CXX achievements_test.cpp $SRC/achievements.cpp $SRC/core_host.cpp $RAFLAGS "$OUT/librcheevos.a" -ldl -lpthread -o "$OUT/achievements_test"
 
 "$OUT/pacer_test"
 "$OUT/resampler_test"
+"$OUT/recorder_test"
 # If the GLES test crashes, run it again under gdb for a stack trace.
 if ! EGL_PLATFORM=surfaceless "$OUT/gl_test" "$OUT/fake_hw_core.so"; then
     if command -v gdb > /dev/null; then

@@ -90,6 +90,16 @@ object NativeBridge {
     external fun tvDrawFrame()
 
     // Network link (GBA / GB). linkStart and linkStop: GL thread.
+    // Video recording (recorder.cpp). recStart on the GL thread.
+    external fun recStart()
+    external fun recStop()
+    external fun recFirstSize(): IntArray
+    external fun recHasVideo(): Boolean
+    external fun recFillVideo(y: java.nio.ByteBuffer, yStride: Int, u: java.nio.ByteBuffer, v: java.nio.ByteBuffer,
+                              uvStride: Int, uvPixelStride: Int, width: Int, height: Int): Long
+    external fun recAudioAvailable(): Int
+    external fun recFillAudio(out: java.nio.ByteBuffer, maxFrames: Int, pts: LongArray): Int
+
     // RetroAchievements (achievements.cpp). raStart on the GL thread.
     external fun raStart(user: String, token: String, console: Int)
     /** {id, url, post data, content type} of the next server request, or null. */

@@ -29,6 +29,7 @@ add_library(cartucho SHARED
     audio_output.cpp
     core_host.cpp
     gl_presenter.cpp
+    recorder.cpp
     resampler.cpp
     rewind.cpp
     runahead.cpp

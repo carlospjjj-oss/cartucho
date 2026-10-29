@@ -152,6 +152,15 @@ std::unique_ptr<Session> g_session;
 std::mutex g_ra_mutex;
 std::shared_ptr<Achievements> g_ra;
 
+// Video recording, reached the same way by the app's encoder thread.
+std::mutex g_rec_mutex;
+std::shared_ptr<cartucho::Recorder> g_rec;
+
+std::shared_ptr<cartucho::Recorder> CurrentRecorder() {
+    std::lock_guard<std::mutex> lock(g_rec_mutex);
+    return g_rec;
+}
+
 std::shared_ptr<Achievements> CurrentAchievements() {
     std::lock_guard<std::mutex> lock(g_ra_mutex);
     return g_ra;
@@ -378,6 +387,74 @@ JNI_FN(void, raRespond)(JNIEnv* env, jobject, jint id, jint status, jbyteArray b
     ra->Respond(id, status, std::move(text));
 }
 
+// GL thread: start recording (a new video).
+JNI_FN(void, recStart)(JNIEnv*, jobject) {
+    if (!g_session)
+        return;
+    auto rec = CurrentRecorder();
+    if (!rec) {
+        rec = std::make_shared<cartucho::Recorder>();
+        std::lock_guard<std::mutex> lock(g_rec_mutex);
+        g_rec = rec;
+    }
+    g_session->set_recorder(rec);
+    rec->Start(g_session->host().fps(), g_session->host().sample_rate());
+}
+
+// Any thread.
+JNI_FN(void, recStop)(JNIEnv*, jobject) {
+    if (auto rec = CurrentRecorder())
+        rec->Stop();
+}
+
+// {width, height} of the first recorded picture (0, 0 until there is one).
+JNI_FN(jintArray, recFirstSize)(JNIEnv* env, jobject) {
+    int w = 0, h = 0;
+    if (auto rec = CurrentRecorder())
+        rec->FirstSize(&w, &h);
+    jintArray out = env->NewIntArray(2);
+    const jint v[2] = {w, h};
+    env->SetIntArrayRegion(out, 0, 2, v);
+    return out;
+}
+
+JNI_FN(jboolean, recHasVideo)(JNIEnv*, jobject) {
+    auto rec = CurrentRecorder();
+    return rec && rec->HasVideo();
+}
+
+// Fills the encoder's YUV planes (direct buffers); returns the time in µs or -1.
+JNI_FN(jlong, recFillVideo)(JNIEnv* env, jobject, jobject y, jint y_stride, jobject u, jobject v,
+                            jint uv_stride, jint uv_pixel_stride, jint width, jint height) {
+    auto rec = CurrentRecorder();
+    if (!rec)
+        return -1;
+    auto* py = static_cast<uint8_t*>(env->GetDirectBufferAddress(y));
+    auto* pu = static_cast<uint8_t*>(env->GetDirectBufferAddress(u));
+    auto* pv = static_cast<uint8_t*>(env->GetDirectBufferAddress(v));
+    if (!py || !pu || !pv)
+        return -1;
+    return rec->FillVideo(py, y_stride, pu, pv, uv_stride, uv_pixel_stride, width, height);
+}
+
+JNI_FN(jint, recAudioAvailable)(JNIEnv*, jobject) {
+    auto rec = CurrentRecorder();
+    return rec ? static_cast<jint>(rec->AudioAvailable()) : 0;
+}
+
+// Up to `max_frames` 48 kHz stereo frames into `out` (direct buffer); pts[0] = their time in µs.
+JNI_FN(jint, recFillAudio)(JNIEnv* env, jobject, jobject out, jint max_frames, jlongArray pts) {
+    auto rec = CurrentRecorder();
+    auto* p = static_cast<int16_t*>(env->GetDirectBufferAddress(out));
+    if (!rec || !p)
+        return 0;
+    int64_t t = 0;
+    const size_t n = rec->FillAudio(p, static_cast<size_t>(max_frames), &t);
+    const jlong tv = t;
+    env->SetLongArrayRegion(pts, 0, 1, &tv);
+    return static_cast<jint>(n);
+}
+
 // The game's achievements, "1|title|description|points[|progress]" (1 = earned).
 JNI_FN(jobjectArray, raList)(JNIEnv* env, jobject) {
     jclass string_class = env->FindClass("java/lang/String");
@@ -407,6 +484,12 @@ JNI_FN(void, close)(JNIEnv*, jobject) {
     {
         std::lock_guard<std::mutex> lock(g_ra_mutex);
         g_ra.reset();
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_rec_mutex);
+        if (g_rec)
+            g_rec->Stop();
+        g_rec.reset();
     }
     g_session.reset();
 }

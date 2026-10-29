@@ -130,6 +130,10 @@ public:
     size_t PopAudio(int16_t* stereo, size_t frames) { return audio_.Pop(stereo, frames); }
     size_t QueuedAudioFrames() const { return audio_.Available(); }
     void SetAudioMuted(bool muted) { audio_muted_ = muted; }
+    // Also hands every sample the core makes (muted or not, not during
+    // run-ahead's hidden frames) to `tap` (video recording). Emulation thread.
+    using AudioTap = void (*)(void* user, const int16_t* stereo, size_t frames);
+    void SetAudioTap(AudioTap tap, void* user) { audio_tap_ = tap; audio_tap_user_ = user; }
     // Drops audio without telling the core it is fast-forwarding (run-ahead).
     void SetAudioSuppressed(bool on) { audio_suppressed_ = on; }
     // What GET_AUDIO_VIDEO_ENABLE answers, so cores can skip work.
@@ -238,6 +242,8 @@ private:
     AudioRing audio_;
     bool audio_muted_ = false;
     bool audio_suppressed_ = false;
+    AudioTap audio_tap_ = nullptr;
+    void* audio_tap_user_ = nullptr;
     int av_flags_ = kAvVideo | kAvAudio;
 
     std::atomic<uint32_t> buttons_{0};

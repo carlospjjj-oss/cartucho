@@ -205,6 +205,27 @@ bool Session::Screenshot(std::vector<uint8_t>* rgba, int* width, int* height) {
     return presenter_.ReadHwFrame(f.width, f.height, host_->hw_render().bottom_left_origin, rgba);
 }
 
+void Session::set_recorder(std::shared_ptr<Recorder> rec) {
+    rec_ = std::move(rec);
+    CoreHost::AudioTap tap = [](void* user, const int16_t* stereo, size_t frames) {
+        static_cast<Recorder*>(user)->PushAudio(stereo, frames);
+    };
+    host_->SetAudioTap(rec_ ? tap : nullptr, rec_.get());
+}
+
+void Session::RecordPicture(int frames) {
+    if (!rec_ || !rec_->active())
+        return;
+    const VideoFrame& f = host_->frame();
+    if (f.width == 0 || f.height == 0)
+        return;
+    if (!f.hw) {
+        rec_->PushVideo(f.rgba.data(), f.width, f.height, frames);
+    } else if (presenter_.ReadHwFrame(f.width, f.height, host_->hw_render().bottom_left_origin, &rec_hw_)) {
+        rec_->PushVideo(rec_hw_.data(), f.width, f.height, frames);
+    }
+}
+
 void Session::OnSurfaceChanged(int width, int height) {
     width_ = std::max(width, 1);
     height_ = std::max(height, 1);
@@ -244,6 +265,7 @@ void Session::Frame(double now) {
             if (rewind_.Pop(&state_buf_) && host_->UnserializeFrom(state_buf_)) {
                 host_->RunFrame();  // draw the restored moment
                 frames_since_capture_ = 0;
+                RecordPicture(1);
             }
             pacer_.Reset();
         } else {
@@ -253,7 +275,12 @@ void Session::Frame(double now) {
                 RunOneFrame();
                 if (ra_)
                     ra_->DoFrame();  // achievements watch every real frame
+                if (!host_->uses_hw_render())
+                    RecordPicture(1);
             }
+            // Hardware frames are read back once per refresh (it is slow).
+            if (frames > 0 && host_->uses_hw_render())
+                RecordPicture(frames);
         }
         if (ra_ && frames == 0)
             ra_->Idle();
