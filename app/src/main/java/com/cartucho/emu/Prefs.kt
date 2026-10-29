@@ -35,6 +35,7 @@ class Prefs(context: Context) {
     val microphone: Boolean get() = p.getBoolean("microphone", true)
     val tvMode: Boolean get() = p.getBoolean("tv_mode", true)
     val runAhead: Int get() = p.getString("run_ahead", "0")!!.toIntOrNull() ?: 0
+    val resume: Boolean get() = p.getBoolean("resume", true)
     val rewind: Boolean get() = p.getBoolean("rewind", true)
     val quickButtons: Boolean get() = p.getBoolean("quick_buttons", true)
 

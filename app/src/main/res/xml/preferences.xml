@@ -56,6 +56,11 @@
 
     <PreferenceCategory app:title="Jogo">
         <SwitchPreferenceCompat
+            app:key="resume"
+            app:title="Continuar de onde parou"
+            app:summary="Ao sair, o jogo é salvo no ponto exato e continua dali na próxima vez (menos 3DS). Para começar do zero use Menu → Reiniciar jogo."
+            app:defaultValue="true" />
+        <SwitchPreferenceCompat
             app:key="rewind"
             app:title="Voltar no tempo"
             app:summary="Segure « para desfazer os últimos segundos (GB, GBA e DS)"

@@ -97,6 +97,9 @@ class Covers(private val context: Context) {
         tgdbPausedUntil = 0L
     }
 
+    /** The cover, found or downloaded now (call off the main thread). */
+    fun bitmapBlocking(game: Game): Bitmap? = runCatching { fetch(game, key(game)) }.getOrNull()
+
     private fun key(game: Game) = game.system.name + "/" + sanitize(game.fileName.substringBeforeLast('.'))
     private fun customFile(game: Game) = File(customDir, key(game).replace('/', '_') + ".img")
 

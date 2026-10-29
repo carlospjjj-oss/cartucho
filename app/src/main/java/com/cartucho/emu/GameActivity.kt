@@ -69,6 +69,8 @@ class GameActivity : AppCompatActivity() {
     private var overlayStickX = 0f
     private var overlayStickY = 0f
     private var frameCounter = 0
+    // Play time: counted while the game is on screen.
+    private var playingSince = 0L
     private var messageUntil = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -410,16 +412,42 @@ class GameActivity : AppCompatActivity() {
         if (::tvMode.isInitialized) tvMode.resume()
         if (modalCount == 0 && !overlay.editMode) NativeBridge.setPaused(false)
         if (loaded) NativeBridge.startAudio()
+        playingSince = android.os.SystemClock.elapsedRealtime()
+    }
+
+    private fun countPlayTime() {
+        if (playingSince == 0L) return
+        val ms = android.os.SystemClock.elapsedRealtime() - playingSince
+        playingSince = 0L
+        if (loaded) Thread { PlayStats.addPlayTime(this, game, ms) }.start()
+    }
+
+    /**
+     * On the GL thread: remember this exact moment, and its picture, for
+     * "continue where you left off". Not during a link session (the other
+     * side would not be there to continue with).
+     */
+    private fun saveResumePoint() {
+        if (!prefs.resume || !PlayStats.canResume(game.system)) return
+        if (::linkUi.isInitialized && linkUi.connected) return
+        val f = PlayStats.resumeState(this, game)
+        if (NativeBridge.saveState(f.path) == null)
+            PlayStats.saveThumb(this, game, NativeBridge.screenshot())
     }
 
     override fun onPause() {
         resumed = false
+        countPlayTime()
         if (::devices.isInitialized) devices.stop()
         if (::tvMode.isInitialized) tvMode.pause()
         if (rendererSet) {
             NativeBridge.setPaused(true)
             NativeBridge.stopAudio()
-            if (loaded) glView.queueEvent { NativeBridge.flushSave() }
+            if (loaded) glView.queueEvent {
+                NativeBridge.flushSave()
+                // The app may be closed from the recent apps list while away.
+                saveResumePoint()
+            }
             glView.onPause()
         }
         super.onPause()
@@ -444,8 +472,10 @@ class GameActivity : AppCompatActivity() {
         NativeBridge.stopAudio()
         if (::linkUi.isInitialized) linkUi.release()
         if (::tvMode.isInitialized) tvMode.stop()
+        countPlayTime()
         glView.queueEvent {
             NativeBridge.linkStop()
+            saveResumePoint()
             NativeBridge.close()
             runOnUiThread { finish() }
         }
@@ -480,12 +510,15 @@ class GameActivity : AppCompatActivity() {
                 NativeBridge.setRewindEnabled(prefs.rewind)
                 if (NativeBridge.runAheadPossible()) NativeBridge.setRunAhead(prefs.runAhead)
                 if (game.system != GameSystem.N3DS) cheats.apply()
+                // Continue where the player left off.
+                val continued = prefs.resume && PlayStats.hasResume(this@GameActivity, game) &&
+                    NativeBridge.loadState(PlayStats.resumeState(this@GameActivity, game).path) == null
                 val canRewind = prefs.rewind && NativeBridge.rewindAvailable()
                 runOnUiThread {
                     overlay.rewindAvailable = canRewind
                     applyDisplay()
                     if (resumed) NativeBridge.startAudio()
-                    showMessage(game.title)
+                    showMessage(if (continued) "Continuando de onde parou" else game.title)
                     tvMode.start()
                 }
             }

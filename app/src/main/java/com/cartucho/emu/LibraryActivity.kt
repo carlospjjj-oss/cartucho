@@ -16,7 +16,12 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SearchView
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
+import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
@@ -44,6 +49,9 @@ class LibraryActivity : AppCompatActivity() {
     private var games: List<Game> = emptyList()
     private var filter: String = FILTER_ALL
     private var query: String = ""
+    private val continueRow = ContinueRowAdapter()
+    // Play time per game uri, read in the background (small files).
+    private var playTimes: Map<String, Long> = emptyMap()
 
     private val pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri ?: return@registerForActivityResult
@@ -99,8 +107,14 @@ class LibraryActivity : AppCompatActivity() {
         progress = findViewById(R.id.progress)
         chips = findViewById(R.id.chips)
         adapter = GameAdapter()
-        grid.adapter = adapter
-        grid.layoutManager = GridLayoutManager(this, spanCount())
+        grid.adapter = ConcatAdapter(continueRow, adapter)
+        grid.layoutManager = GridLayoutManager(this, spanCount()).apply {
+            spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
+                // The "continue" row spans the whole width.
+                override fun getSpanSize(position: Int) =
+                    if (position < continueRow.itemCount) spanCount else 1
+            }
+        }
 
         findViewById<ExtendedFloatingActionButton>(R.id.fab).setOnClickListener { pickFolder.launch(null) }
         findViewById<View>(R.id.empty_add).setOnClickListener { pickFolder.launch(null) }
@@ -110,6 +124,25 @@ class LibraryActivity : AppCompatActivity() {
         games = store.loadGames()
         applyFilter()
         if (store.folders.isNotEmpty() || store.looseGames().isNotEmpty()) rescan()
+        handlePlayIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handlePlayIntent(intent)
+    }
+
+    /** A home-screen shortcut to one game. */
+    private fun handlePlayIntent(intent: Intent?) {
+        if (intent?.action != ACTION_PLAY) return
+        val uri = intent.getStringExtra(EXTRA_GAME_URI) ?: return
+        intent.action = null  // not again on rotation
+        val game = (games + store.looseGames()).firstOrNull { it.uri == uri }
+        if (game == null) {
+            Snackbar.make(grid, "Esse jogo não está mais na biblioteca.", Snackbar.LENGTH_LONG).show()
+            return
+        }
+        launch(game)
     }
 
     override fun onResume() {
@@ -120,8 +153,8 @@ class LibraryActivity : AppCompatActivity() {
                 .setAction("Ver relatório") { ErrorReport.show(this) }
                 .show()
         }
-        // "Recentes" order changes after playing.
-        if (filter == FILTER_RECENT) applyFilter()
+        // "Recentes" order, play times and the continue row change after playing.
+        refreshPlayInfo()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -164,9 +197,32 @@ class LibraryActivity : AppCompatActivity() {
         }
         if (query.isNotEmpty()) list = list.filter { it.title.contains(query, ignoreCase = true) }
         adapter.submitList(list)
+        updateContinueRow()
         val nothingAtAll = games.isEmpty() && progress.visibility != View.VISIBLE
         empty.visibility = if (nothingAtAll) View.VISIBLE else View.GONE
         findViewById<View>(R.id.fab).visibility = if (nothingAtAll) View.GONE else View.VISIBLE
+    }
+
+    private fun refreshPlayInfo() {
+        val all = games
+        io.execute {
+            val times = all.associate { it.uri to PlayStats.playTime(this, it) }.filterValues { it > 0 }
+            runOnUiThread {
+                playTimes = times
+                applyFilter()
+                adapter.notifyDataSetChanged()
+            }
+        }
+    }
+
+    /** Shown on the full list only, without a search: up to 10 recent games. */
+    private fun updateContinueRow() {
+        val show = filter == FILTER_ALL && query.isEmpty()
+        val recent = if (!show) emptyList() else games
+            .filter { store.lastPlayed(it) > 0 }
+            .sortedByDescending { store.lastPlayed(it) }
+            .take(10)
+        continueRow.setGames(recent)
     }
 
     private fun rescan() {
@@ -177,6 +233,7 @@ class LibraryActivity : AppCompatActivity() {
                 games = found
                 progress.visibility = View.GONE
                 applyFilter()
+                refreshPlayInfo()
                 if (found.isNotEmpty())
                     supportActionBarTitle(getString(R.string.games_found, found.size))
             }
@@ -250,6 +307,37 @@ class LibraryActivity : AppCompatActivity() {
         }
         store.markPlayed(game)
         startActivity(GameActivity.intent(this, game))
+        // Long-pressing the app icon lists the latest games.
+        io.execute { runCatching { ShortcutManagerCompat.pushDynamicShortcut(this, shortcut(game)) } }
+    }
+
+    /** Shortcut opening this game directly (built off the main thread: it may fetch the cover). */
+    private fun shortcut(game: Game): ShortcutInfoCompat {
+        val icon = covers.bitmapBlocking(game)?.let { bmp ->
+            val side = minOf(bmp.width, bmp.height)
+            val square = android.graphics.Bitmap.createBitmap(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side)
+            IconCompat.createWithBitmap(android.graphics.Bitmap.createScaledBitmap(square, 192, 192, true))
+        } ?: IconCompat.createWithResource(this, R.mipmap.ic_launcher)
+        val intent = Intent(this, LibraryActivity::class.java)
+            .setAction(ACTION_PLAY)
+            .putExtra(EXTRA_GAME_URI, game.uri)
+        return ShortcutInfoCompat.Builder(this, "game:" + game.uri.hashCode())
+            .setShortLabel(game.title.take(24))
+            .setLongLabel(game.title)
+            .setIcon(icon)
+            .setIntent(intent)
+            .build()
+    }
+
+    private fun pinShortcut(game: Game) {
+        if (!ShortcutManagerCompat.isRequestPinShortcutSupported(this)) {
+            Snackbar.make(grid, "A tela inicial deste celular não aceita atalhos.", Snackbar.LENGTH_LONG).show()
+            return
+        }
+        io.execute {
+            val info = shortcut(game)
+            runOnUiThread { ShortcutManagerCompat.requestPinShortcut(this, info, null) }
+        }
     }
 
     private val legacyStoragePermission =
@@ -339,12 +427,18 @@ class LibraryActivity : AppCompatActivity() {
                 pickCover.launch(arrayOf("image/*"))
             },
         )
+        actions += "Criar atalho na tela inicial" to { pinShortcut(game) }
+        if (PlayStats.hasResume(this, game)) actions += "Começar do zero na próxima vez" to {
+            PlayStats.clearResume(this, game)
+            updateContinueRow()
+        }
         if (covers.hasCustom(game)) actions += "Remover capa escolhida" to {
             covers.removeCustom(game)
             adapter.notifyDataSetChanged()
         }
+        val time = playTimes[game.uri] ?: 0L
         MaterialAlertDialogBuilder(this)
-            .setTitle(game.title)
+            .setTitle(game.title + if (time > 0) "  ·  ${PlayStats.formatTime(time)}" else "")
             .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second() }
             .show()
     }
@@ -382,14 +476,100 @@ class LibraryActivity : AppCompatActivity() {
             badge.text = game.system.shortName
             fav.visibility = if (store.isFavorite(game)) View.VISIBLE else View.GONE
             title.text = game.title
-            subtitle.text = listOf(game.system.fullName, game.tags).filter { it.isNotEmpty() }.joinToString(" · ")
+            val time = playTimes[game.uri]
+            subtitle.text = if (time != null) "${game.system.shortName} · ${PlayStats.formatTime(time)} jogados"
+                            else listOf(game.system.fullName, game.tags).filter { it.isNotEmpty() }.joinToString(" · ")
             covers.load(game, cover) { found -> initials.visibility = if (found) View.INVISIBLE else View.VISIBLE }
             itemView.setOnClickListener { launch(game) }
             itemView.setOnLongClickListener { showGameMenu(game); true }
         }
     }
 
+    /** The "Continuar jogando" header: one full-width item holding a horizontal list. */
+    private inner class ContinueRowAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+        private var list: List<Game> = emptyList()
+        private val cards = ContinueCardAdapter()
+
+        fun setGames(games: List<Game>) {
+            val had = list.isNotEmpty()
+            list = games
+            cards.submitList(games)
+            when {
+                had && games.isEmpty() -> notifyItemRemoved(0)
+                !had && games.isNotEmpty() -> notifyItemInserted(0)
+                games.isNotEmpty() -> notifyItemChanged(0)
+            }
+        }
+
+        override fun getItemCount() = if (list.isEmpty()) 0 else 1
+        override fun getItemViewType(position: Int) = 1
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+            val view = LayoutInflater.from(parent.context).inflate(R.layout.item_continue_row, parent, false)
+            view.findViewById<RecyclerView>(R.id.continue_list).apply {
+                layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+                adapter = cards
+            }
+            return object : RecyclerView.ViewHolder(view) {}
+        }
+
+        override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+            cards.notifyDataSetChanged()
+        }
+    }
+
+    private inner class ContinueCardAdapter : ListAdapter<Game, ContinueHolder>(DIFF) {
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
+            ContinueHolder(LayoutInflater.from(parent.context).inflate(R.layout.item_continue, parent, false))
+
+        override fun onBindViewHolder(holder: ContinueHolder, position: Int) = holder.bind(getItem(position))
+    }
+
+    private inner class ContinueHolder(view: View) : RecyclerView.ViewHolder(view) {
+        private val shot: ImageView = view.findViewById(R.id.shot)
+        private val badge: TextView = view.findViewById(R.id.badge)
+        private val play: TextView = view.findViewById(R.id.play)
+        private val title: TextView = view.findViewById(R.id.title)
+        private val info: TextView = view.findViewById(R.id.info)
+
+        fun bind(game: Game) {
+            val color = ContextCompat.getColor(itemView.context, game.system.color)
+            badge.text = game.system.shortName
+            play.background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(color)
+            }
+            title.text = game.title
+            val parts = mutableListOf(PlayStats.formatAgo(store.lastPlayed(game)))
+            playTimes[game.uri]?.let { parts += PlayStats.formatTime(it) }
+            info.text = parts.joinToString(" · ")
+            shot.setImageDrawable(null)
+            shot.tag = game.uri
+            io.execute {
+                // Where the player stopped; the cover when there is no picture yet.
+                val thumb = PlayStats.thumb(this@LibraryActivity, game)
+                runOnUiThread {
+                    if (shot.tag != game.uri) return@runOnUiThread
+                    if (thumb != null) {
+                        // Pixel art stays sharp when enlarged.
+                        shot.scaleType = ImageView.ScaleType.FIT_CENTER
+                        shot.setImageDrawable(android.graphics.drawable.BitmapDrawable(resources, thumb).apply {
+                            isFilterBitmap = thumb.width > 300
+                        })
+                    } else {
+                        shot.scaleType = ImageView.ScaleType.CENTER_CROP
+                        covers.load(game, shot) { }
+                    }
+                }
+            }
+            itemView.setOnClickListener { launch(game) }
+            itemView.setOnLongClickListener { showGameMenu(game); true }
+        }
+    }
+
     companion object {
+        const val ACTION_PLAY = "com.cartucho.emu.PLAY"
+        const val EXTRA_GAME_URI = "game_uri"
         private const val FILTER_ALL = "all"
         private const val FILTER_RECENT = "recent"
         private const val FILTER_FAV = "fav"
