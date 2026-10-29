@@ -97,6 +97,31 @@ void main() {
         o_color = vec4(c, 1.0);
         return;
     }
+    if (u_mode == 7) {
+        // CRT TV: sharp-bilinear sample, bright scanline beams, an RGB
+        // aperture-grille mask on the real screen pixels and darker corners.
+        vec2 scale = max(floor(u_out_size / u_src_size), vec2(1.0));
+        vec2 base = floor(texel);
+        vec2 range = 0.5 - 0.5 / scale;
+        vec2 centre = texel - base - 0.5;
+        vec2 f = (centre - clamp(centre, -range, range)) * scale + 0.5;
+        vec3 c = texture(u_tex, to_uv(base + f)).rgb;
+        float strength = clamp((min(u_out_size.x / u_src_size.x,
+                                    u_out_size.y / u_src_size.y) - 1.5) / 2.0, 0.0, 1.0);
+        float y = fract(texel.y) - 0.5;
+        float lum = dot(c, vec3(0.299, 0.587, 0.114));
+        float width = mix(0.2, 0.36, lum);
+        float beam = exp(-(y * y) / (2.0 * width * width));
+        c *= mix(1.0, mix(0.5, 1.32, beam), strength);
+        int m = int(mod(gl_FragCoord.x, 3.0));
+        vec3 mask = vec3(0.82);
+        if (m == 0) mask.r = 1.18; else if (m == 1) mask.g = 1.18; else mask.b = 1.18;
+        c *= mix(vec3(1.0), mask, strength * 0.85);
+        vec2 n = texel / u_src_size * 2.0 - 1.0;
+        c *= 1.0 - 0.22 * dot(n * n, vec2(0.5));
+        o_color = vec4(clamp(c * 1.06, 0.0, 1.0), 1.0);
+        return;
+    }
     if (u_mode == 2) {
         // Sharp bilinear: nearest inside each source pixel, a one-screen-
         // pixel blend at its edges. Crisp at any scale, no shimmering.
@@ -380,7 +405,7 @@ void GlPresenter::DrawSource(const FrameSource& source, int surface_width, int s
     glActiveTexture(GL_TEXTURE0);
     glBindSampler(0, 0);
     glBindTexture(GL_TEXTURE_2D, source.texture);
-    const bool linear = filter_ == Filter::kSmooth || filter_ == Filter::kSharpSmooth;
+    const bool linear = filter_ == Filter::kSmooth || filter_ == Filter::kSharpSmooth || filter_ == Filter::kCrt;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, linear ? GL_LINEAR : GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, linear ? GL_LINEAR : GL_NEAREST);
 

@@ -336,6 +336,17 @@ class GameActivity : AppCompatActivity() {
         if (game.system != GameSystem.N3DS) {
             // Real BIOS when the player imported one, built-in otherwise.
             NativeBridge.setOption("vbam_usebios", if (Bios.anyFor(this, game.system)) "enabled" else "disabled")
+            if (game.system == GameSystem.GB || game.system == GameSystem.GBA) {
+                // Colours as the handheld's own screen showed them.
+                val lcd = prefs.lcdColor
+                NativeBridge.setOption("vbam_lcdfilter", if (lcd == "off") "disabled" else "enabled")
+                if (lcd != "off") {
+                    NativeBridge.setOption("vbam_lcdfilter_gba_panel", lcd)
+                    NativeBridge.setOption("vbam_lcdfilter_gbc_panel", if (lcd == "NSO") "NSO" else "GBC")
+                }
+                NativeBridge.setOption("vbam_palettes", prefs.gbPalette)
+                NativeBridge.setOption("vbam_interframeblending", prefs.frameBlend)
+            }
             return
         }
         NativeBridge.setOption("citra_graphics_api", "OpenGL")

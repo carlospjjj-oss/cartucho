@@ -35,6 +35,9 @@ class Prefs(context: Context) {
     val microphone: Boolean get() = p.getBoolean("microphone", true)
     val tvMode: Boolean get() = p.getBoolean("tv_mode", true)
     val runAhead: Int get() = p.getString("run_ahead", "0")!!.toIntOrNull() ?: 0
+    val lcdColor: String get() = p.getString("lcd_color", "off")!!
+    val gbPalette: String get() = p.getString("gb_palette", "original gameboy")!!
+    val frameBlend: String get() = p.getString("frame_blend", "disabled")!!
     val resume: Boolean get() = p.getBoolean("resume", true)
     val rewind: Boolean get() = p.getBoolean("rewind", true)
     val quickButtons: Boolean get() = p.getBoolean("quick_buttons", true)

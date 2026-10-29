@@ -15,6 +15,27 @@
             app:title="Escala inteira"
             app:summary="Pixels todos do mesmo tamanho; pode deixar bordas pretas"
             app:defaultValue="false" />
+        <ListPreference
+            app:key="lcd_color"
+            app:title="Cores de tela real (GB Color / GBA)"
+            app:entries="@array/lcd_color_names"
+            app:entryValues="@array/lcd_color_values"
+            app:defaultValue="off"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:key="gb_palette"
+            app:title="Paleta do Game Boy clássico (jogos sem cor)"
+            app:entries="@array/gb_palette_names"
+            app:entryValues="@array/gb_palette_values"
+            app:defaultValue="original gameboy"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:key="frame_blend"
+            app:title="Mistura de quadros (transparências do GBA)"
+            app:entries="@array/blend_names"
+            app:entryValues="@array/blend_values"
+            app:defaultValue="disabled"
+            app:useSimpleSummaryProvider="true" />
         <SwitchPreferenceCompat
             app:key="show_fps"
             app:title="Mostrar FPS"

@@ -8,9 +8,10 @@
         <item>@string/filter_scanlines</item>
         <item>Bordas arredondadas 2x (Scale2x)</item>
         <item>Bordas arredondadas 3x (Scale3x)</item>
+        <item>TV de tubo (CRT)</item>
     </string-array>
     <string-array name="filter_values">
-        <item>0</item><item>1</item><item>2</item><item>3</item><item>4</item><item>5</item><item>6</item>
+        <item>0</item><item>1</item><item>2</item><item>3</item><item>4</item><item>5</item><item>6</item><item>7</item>
     </string-array>
     <string-array name="tex_filter_names">
         <item>Nenhum (original)</item>
@@ -77,5 +78,37 @@
         <item>modern</item>
         <item>neon</item>
         <item>classic</item>
+    </string-array>
+    <string-array name="lcd_color_names">
+        <item>Desligado (cores fortes do emulador)</item>
+        <item>GBA / GBC original</item>
+        <item>GBA SP com luz</item>
+        <item>GBA Micro</item>
+        <item>DS Lite</item>
+        <item>Nintendo Switch Online</item>
+    </string-array>
+    <string-array name="lcd_color_values">
+        <item>off</item><item>GBA</item><item>GBASP Backlit</item><item>Micro</item><item>DS-Lite</item><item>NSO</item>
+    </string-array>
+    <string-array name="blend_names">
+        <item>Desligada</item>
+        <item>Inteligente (só onde pisca)</item>
+        <item>Rastro de LCD</item>
+    </string-array>
+    <string-array name="blend_values">
+        <item>disabled</item><item>smart</item><item>motion blur</item>
+    </string-array>
+    <string-array name="gb_palette_names">
+        <item>Preto e branco</item>
+        <item>Game Boy original (verde)</item>
+        <item>Game Boy Pocket / GBA SP</item>
+        <item>Mar azul</item>
+        <item>Cavaleiro sombrio</item>
+        <item>Floresta verde</item>
+        <item>Deserto quente</item>
+        <item>Sonho rosa</item>
+    </string-array>
+    <string-array name="gb_palette_values">
+        <item>black and white</item><item>original gameboy</item><item>gba sp</item><item>blue sea</item><item>dark knight</item><item>green forest</item><item>hot desert</item><item>pink dreams</item>
     </string-array>
 </resources>

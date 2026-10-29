@@ -24,6 +24,7 @@ enum class Filter : int {
     kScanlines = 4,     // CRT-like scanlines
     kScale2x = 5,       // EPX / Scale2x: rounds diagonal edges, stays crisp
     kScale3x = 6,       // Scale3x (AdvMAME3x): the same at 3x, smoother
+    kCrt = 7,           // CRT TV: scanlines, RGB mask, darker corners
     kCount
 };
 
