@@ -38,6 +38,10 @@ class Prefs(context: Context) {
     val lcdColor: String get() = p.getString("lcd_color", "off")!!
     val gbPalette: String get() = p.getString("gb_palette", "original gameboy")!!
     val frameBlend: String get() = p.getString("frame_blend", "disabled")!!
+    /** PlayStation: DualShock (analog sticks) instead of the plain pad. */
+    val ps1DualShock: Boolean get() = p.getBoolean("ps1_dualshock", true)
+    /** PlayStation: an analog stick on the touch screen. */
+    val ps1TouchStick: Boolean get() = p.getBoolean("ps1_touch_stick", false)
     val resume: Boolean get() = p.getBoolean("resume", true)
     val rewind: Boolean get() = p.getBoolean("rewind", true)
     val quickButtons: Boolean get() = p.getBoolean("quick_buttons", true)

@@ -93,6 +93,16 @@ public:
     const retro_memory_map* memory_map() const { return mem_descs_.empty() ? nullptr : &mem_map_; }
     // retro_get_memory_data / _size (RETRO_MEMORY_SYSTEM_RAM...).
     uint8_t* MemoryData(unsigned id, size_t* size) const;
+
+    // Controller type on port 0 (RETRO_DEVICE_*); before or after loading.
+    void SetPortDevice(unsigned device);
+
+    // Multi-disc games (disk control interface). Emulation thread.
+    unsigned DiskCount() const;
+    int DiskIndex() const;
+    std::string DiskLabel(unsigned index) const;
+    // Opens the tray, puts in disc `index`, closes it.
+    bool SetDisk(unsigned index);
     // An already open file holding the game (Android hands out descriptors,
     // not paths). Used instead of opening rom_path when the core takes the
     // game from memory; rom_path then only names it (cores look at the
@@ -222,6 +232,8 @@ private:
     std::vector<uint8_t> rom_data_;  // kept alive for cores without need_fullpath
     std::string rom_path_;
     // The core's memory map (SET_MEMORY_MAPS), copied: achievements read it.
+    retro_disk_control_ext_callback disk_{};
+    unsigned port_device_ = RETRO_DEVICE_JOYPAD;
     std::vector<retro_memory_descriptor> mem_descs_;
     std::vector<std::string> mem_names_;
     retro_memory_map mem_map_{};

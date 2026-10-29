@@ -119,7 +119,22 @@ class LibraryStore(private val context: Context) {
             val tree = Tree()
             walk(root, "", 0, tree)
             val local = LocalCovers(context, tree.images, tree.gamelists)
+            // Discs listed in an .m3u are played through it: list the game once.
+            val inPlaylists = HashSet<String>()
             for ((path, game) in tree.games) {
+                if (!game.fileName.endsWith(".m3u", true) || game.entry != null) continue
+                val dir = path.substringBeforeLast('/', "")
+                runCatching {
+                    context.contentResolver.openInputStream(Uri.parse(game.uri))?.bufferedReader()?.useLines { lines ->
+                        lines.map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.forEach { line ->
+                            val rel = line.replace('\\', '/')
+                            inPlaylists += (if (dir.isEmpty()) rel else "$dir/$rel").lowercase()
+                        }
+                    }
+                }
+            }
+            for ((path, game) in tree.games) {
+                if (path.lowercase() in inPlaylists) continue
                 val cover = local.find(path)
                 found[game.uri] = if (cover != null) game.copy(coverUri = cover) else game
             }

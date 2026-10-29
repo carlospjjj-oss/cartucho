@@ -20,7 +20,14 @@ for c in $RA/src/{api,client,hash,libretro,runtime,util}/*.c; do
     [ "$o" -nt "$c" ] || gcc -c -O1 -w $RAFLAGS -I$SRC "$c" -o "$o"
 done
 ar rcs "$OUT/librcheevos.a" "$OUT"/rcheevos/*.o
-SESSION="$SRC/session.cpp $SRC/achievements.cpp $SRC/recorder.cpp $RAFLAGS $OUT/librcheevos.a"
+# libchdr (CHD disc images), with its own CMake build.
+cmake -S $SRC/third_party/libchdr -B "$OUT/libchdr" -DBUILD_SHARED_LIBS=OFF -DCHDR_WANT_TESTS=OFF \
+    -DCMAKE_BUILD_TYPE=Release > /dev/null
+cmake --build "$OUT/libchdr" --target chdr-static -j "$(nproc)" > /dev/null
+L="$OUT/libchdr"
+CHDR="-I$SRC/third_party/libchdr/include $L/libchdr-static.a $L/deps/lzma-26.02/libchdr-lzma.a $L/deps/zstd-1.5.7/libzstd.a $L/deps/miniz-3.1.2/libminiz.a"
+RCLIB="$SRC/chd_reader.cpp $RAFLAGS $OUT/librcheevos.a $CHDR"
+SESSION="$SRC/session.cpp $SRC/achievements.cpp $SRC/recorder.cpp $RCLIB"
 
 $CXX pacer_test.cpp $SESSION $SRC/rewind.cpp $SRC/runahead.cpp $SRC/core_host.cpp $SRC/gl_presenter.cpp -lGLESv2 -lz -ldl -lpthread -o "$OUT/pacer_test"
 $CXX resampler_test.cpp $SRC/resampler.cpp $SRC/core_host.cpp -ldl -o "$OUT/resampler_test"
@@ -33,7 +40,10 @@ $CXX devices_test.cpp $SRC/core_host.cpp -ldl -o "$OUT/devices_test"
 $CXX runahead_test.cpp $SRC/runahead.cpp $SRC/core_host.cpp -ldl -o "$OUT/runahead_test"
 $CXX link_test.cpp $SRC/core_host.cpp -ldl -lpthread -o "$OUT/link_test"
 $CXX recorder_test.cpp $SRC/recorder.cpp -lpthread -o "$OUT/recorder_test"
-$CXX achievements_test.cpp $SRC/achievements.cpp $SRC/core_host.cpp $RAFLAGS "$OUT/librcheevos.a" -ldl -lpthread -o "$OUT/achievements_test"
+# A PlayStation-like disc as .cue/.bin and as .chd must hash the same.
+"$OUT/chd_test" roms/disc.cue roms/disc.chd
+$CXX achievements_test.cpp $SRC/achievements.cpp $SRC/core_host.cpp $RCLIB -ldl -lpthread -o "$OUT/achievements_test"
+$CXX chd_test.cpp $RCLIB -lpthread -o "$OUT/chd_test"
 
 "$OUT/pacer_test"
 "$OUT/resampler_test"

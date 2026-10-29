@@ -151,6 +151,19 @@
             app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="PlayStation">
+        <SwitchPreferenceCompat
+            app:key="ps1_dualshock"
+            app:title="Controle DualShock (analógicos)"
+            app:summary="Para jogos que usam os analógicos (Ape Escape, Spyro, Gran Turismo…). Desligue se um jogo antigo não aceitar o controle."
+            app:defaultValue="true" />
+        <SwitchPreferenceCompat
+            app:key="ps1_touch_stick"
+            app:title="Analógico na tela"
+            app:summary="Mostra um analógico esquerdo nos controles da tela"
+            app:defaultValue="false" />
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="Nintendo DS">
         <ListPreference
             app:key="nds_layout"

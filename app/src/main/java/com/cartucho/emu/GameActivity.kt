@@ -314,6 +314,8 @@ class GameActivity : AppCompatActivity() {
         if (!core.exists()) return "O emulador de ${game.system.fullName} não está neste APK."
 
         NativeBridge.open(core.path, systemDir.path, saveDir.path)?.let { return it }
+        // PlayStation DualShock: RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_ANALOG, 1).
+        if (game.system == GameSystem.PS1 && prefs.ps1DualShock) NativeBridge.setPortDevice((2 shl 8) or 5)
         applyCoreOptions()
         NativeBridge.setGame(romPath, File(saveDir, game.saveName + ".srm").path, romFd)
         return null
@@ -420,6 +422,7 @@ class GameActivity : AppCompatActivity() {
         overlay.haptics = prefs.haptics
         overlay.quickButtons = prefs.quickButtons
         overlay.micButton = prefs.microphone
+        overlay.analogStick = game.system == GameSystem.PS1 && prefs.ps1DualShock && prefs.ps1TouchStick
         overlay.configure(game.system, landscape)
     }
 
@@ -712,6 +715,34 @@ class GameActivity : AppCompatActivity() {
         }
     }
 
+    /** Multi-disc games (.m3u, .pbp with several discs). */
+    private fun pickDisk() {
+        glView.queueEvent {
+            val disks = NativeBridge.disks()
+            runOnUiThread {
+                if (disks.isEmpty()) {
+                    subDialog(MaterialAlertDialogBuilder(this)
+                        .setTitle("Trocar disco")
+                        .setMessage("Este jogo tem um disco só. Para jogos com vários CDs, crie um arquivo .m3u " +
+                            "listando os discos (um nome de arquivo por linha) e abra o .m3u — ou use .pbp com todos os discos.")
+                        .setPositiveButton(R.string.ok, null))
+                    return@runOnUiThread
+                }
+                val current = disks.indexOfFirst { it.startsWith("*") }
+                val labels = disks.map { it.removePrefix("*") }.toTypedArray()
+                subDialog(MaterialAlertDialogBuilder(this)
+                    .setTitle("Trocar disco")
+                    .setSingleChoiceItems(labels, current) { d, which ->
+                        d.dismiss()
+                        glView.queueEvent {
+                            val ok = NativeBridge.setDisk(which)
+                            runOnUiThread { showMessage(if (ok) "💿 ${labels[which]}" else "Não deu para trocar o disco") }
+                        }
+                    })
+            }
+        }
+    }
+
     /** Records the game's picture and sound to Movies/Cartucho. */
     private fun toggleRecording() {
         val current = recorder
@@ -826,6 +857,7 @@ class GameActivity : AppCompatActivity() {
         if (game.system != GameSystem.N3DS) items += "Trapaças" + (if (cheats.list.any { it.enabled }) " (ativas)" else "") to {
             cheats.showDialog(this, { b -> modal.show(b) }) { glView.queueEvent { cheats.apply() } }
         }
+        if (game.system == GameSystem.PS1) items += "💿 Trocar disco" to { pickDisk() }
         if (achievementsOn) items += "🏆 Conquistas" to { showAchievements() }
         items += (if (recorder?.running == true) "⏹ Parar gravação" else "🎬 Gravar vídeo") to { toggleRecording() }
         items += "Captura de tela" to { takeScreenshot() }

@@ -64,6 +64,7 @@ class ButtonPainter(private val density: Float) {
                 else -> Color.rgb(236, 64, 122)  // square
             }
             system == GameSystem.MD && id in setOf("a", "b", "y") -> Color.rgb(63, 81, 181)
+            id in setOf("mdx", "mdy", "mdz") -> Color.rgb(121, 134, 203)
             system == GameSystem.NES && id in setOf("a", "b") -> Color.rgb(211, 47, 47)
             system == GameSystem.SMS && id in setOf("a", "b") -> Color.rgb(0, 137, 123)
             system == GameSystem.GG && id in setOf("a", "b") -> Color.rgb(30, 136, 229)

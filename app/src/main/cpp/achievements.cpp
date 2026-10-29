@@ -2,12 +2,14 @@
 
 #include <cstdio>
 
+#include "chd_reader.h"
 #include "platform.h"
 
 extern "C" {
 #include "rc_api_request.h"
 #include "rc_client.h"
 #include "rc_consoles.h"
+#include "rc_hash.h"
 #include "rc_libretro.h"
 }
 
@@ -45,6 +47,10 @@ Achievements::Achievements(CoreHost* host) : host_(host) {
     // Softcore: saving states, rewinding and cheats stay available. (Hardcore
     // unlocks are only accepted from approved emulators anyway.)
     rc_client_set_hardcore_enabled(client_, 0);
+    // Disc games also as .chd.
+    rc_hash_callbacks_t hash_callbacks{};
+    GetDiscReader(&hash_callbacks.cdreader);
+    rc_client_set_hash_callbacks(client_, &hash_callbacks);
     rc_client_set_event_handler(client_, [](const rc_client_event_t* event, rc_client_t* client) {
         Achievements* self = Self(client);
         CoreHost* host = self->host_;

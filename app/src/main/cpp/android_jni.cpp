@@ -387,6 +387,36 @@ JNI_FN(void, raRespond)(JNIEnv* env, jobject, jint id, jint status, jbyteArray b
     ra->Respond(id, status, std::move(text));
 }
 
+// Controller type on port 0 (e.g. the PlayStation DualShock).
+JNI_FN(void, setPortDevice)(JNIEnv*, jobject, jint device) {
+    if (g_session)
+        g_session->host().SetPortDevice(static_cast<unsigned>(device));
+}
+
+// GL thread. Discs of a multi-disc game: labels, with the one inserted first
+// as "*label"; empty for single-disc games.
+JNI_FN(jobjectArray, disks)(JNIEnv* env, jobject) {
+    jclass string_class = env->FindClass("java/lang/String");
+    std::vector<std::string> labels;
+    if (g_session) {
+        auto& host = g_session->host();
+        const unsigned n = host.DiskCount();
+        const int current = host.DiskIndex();
+        if (n > 1)
+            for (unsigned i = 0; i < n; i++)
+                labels.push_back((static_cast<int>(i) == current ? "*" : "") + host.DiskLabel(i));
+    }
+    jobjectArray out = env->NewObjectArray(static_cast<jsize>(labels.size()), string_class, nullptr);
+    for (size_t i = 0; i < labels.size(); i++)
+        env->SetObjectArrayElement(out, static_cast<jsize>(i), ToJava(env, labels[i]));
+    return out;
+}
+
+// GL thread.
+JNI_FN(jboolean, setDisk)(JNIEnv*, jobject, jint index) {
+    return g_session && g_session->host().SetDisk(static_cast<unsigned>(index));
+}
+
 // GL thread: start recording (a new video).
 JNI_FN(void, recStart)(JNIEnv*, jobject) {
     if (!g_session)

@@ -1,0 +1,1 @@
+libchdr as bundled by pcsx_rearmed 050995286239a066f7cfaf74900350b697161a80 (deps/libchdr). BSD-3-Clause.

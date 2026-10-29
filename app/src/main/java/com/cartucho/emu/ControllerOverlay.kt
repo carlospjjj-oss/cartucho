@@ -66,6 +66,9 @@ class ControllerOverlay(context: Context) : View(context) {
     /** Show the DS MIC button. */
     var micButton = true
         set(value) { field = value; invalidate() }
+    /** PlayStation: show an analog stick (set before configure()). */
+    var analogStick = false
+
     /** Whether this game can rewind (hides the button otherwise). */
     var rewindAvailable = false
         set(value) { field = value; invalidate() }
@@ -125,7 +128,7 @@ class ControllerOverlay(context: Context) : View(context) {
     }
 
     private fun applyDefaults() {
-        controls = fitBesidePicture(defaults(system, landscape))
+        controls = fitBesidePicture(defaults(system, landscape, analogStick))
     }
 
     override fun onApplyWindowInsets(insets: android.view.WindowInsets): android.view.WindowInsets {
@@ -521,8 +524,18 @@ class ControllerOverlay(context: Context) : View(context) {
             )
         }
 
-        fun defaults(system: GameSystem, landscape: Boolean): List<Control> {
-            val base = baseDefaults(system, landscape)
+        fun defaults(system: GameSystem, landscape: Boolean, stick: Boolean = false): List<Control> {
+            var base = baseDefaults(system, landscape)
+            if (stick && system == GameSystem.PS1) {
+                // Room for the left analog stick next to the D-pad.
+                for (c in base) when (c.id) {
+                    "dpad" -> if (landscape) { c.x = 0.11f; c.y = 0.8f } else { c.x = 0.17f; c.y = 0.73f }
+                    "select" -> if (!landscape) { c.x = 0.6f; c.y = 0.965f }
+                    "start" -> if (!landscape) { c.x = 0.8f; c.y = 0.965f }
+                }
+                base = base + Control("stick", Kind.STICK, "", -1,
+                    if (landscape) 0.1f else 0.35f, if (landscape) 0.45f else 0.89f, if (landscape) 110f else 100f)
+            }
             val ff = base.first { it.kind == Kind.FAST_FORWARD }
             val menu = base.first { it.kind == Kind.MENU }
             return base + extras(ff.x, ff.y, menu.x, menu.y, landscape)
@@ -627,20 +640,28 @@ class ControllerOverlay(context: Context) : View(context) {
             }
             GameSystem.MD -> {
                 // Mega Drive A B C, in a slanted row like the pad (RetroPad Y, B, A).
+                // Six-button pad: X Y Z above (RetroPad L, X, R); games that
+                // only know three buttons just ignore them.
                 if (landscape) listOf(
                     dpad(0.12f, 0.68f, 160f),
-                    b("y", "A", Retro.Y, 0.73f, 0.74f, 66f),
-                    b("b", "B", Retro.B, 0.835f, 0.67f, 66f),
-                    b("a", "C", Retro.A, 0.94f, 0.6f, 66f),
+                    b("y", "A", Retro.Y, 0.73f, 0.76f, 62f),
+                    b("b", "B", Retro.B, 0.835f, 0.69f, 62f),
+                    b("a", "C", Retro.A, 0.94f, 0.62f, 62f),
+                    b("mdx", "X", Retro.L, 0.73f, 0.56f, 50f),
+                    b("mdy", "Y", Retro.X, 0.835f, 0.49f, 50f),
+                    b("mdz", "Z", Retro.R, 0.94f, 0.42f, 50f),
                     pill("select", "MODE", Retro.SELECT, 0.42f, 0.94f, 80f, 32f),
                     pill("start", "START", Retro.START, 0.58f, 0.94f, 80f, 32f),
                     menu(0.5f, 0.06f),
                     ff(0.42f, 0.06f),
                 ) else listOf(
-                    dpad(0.24f, 0.72f, 168f),
-                    b("y", "A", Retro.Y, 0.62f, 0.78f, 68f),
-                    b("b", "B", Retro.B, 0.76f, 0.72f, 68f),
-                    b("a", "C", Retro.A, 0.9f, 0.66f, 68f),
+                    dpad(0.24f, 0.74f, 168f),
+                    b("y", "A", Retro.Y, 0.62f, 0.8f, 64f),
+                    b("b", "B", Retro.B, 0.76f, 0.74f, 64f),
+                    b("a", "C", Retro.A, 0.9f, 0.68f, 64f),
+                    b("mdx", "X", Retro.L, 0.62f, 0.67f, 50f),
+                    b("mdy", "Y", Retro.X, 0.76f, 0.61f, 50f),
+                    b("mdz", "Z", Retro.R, 0.9f, 0.55f, 50f),
                     pill("select", "MODE", Retro.SELECT, 0.38f, 0.92f, 84f, 34f),
                     pill("start", "START", Retro.START, 0.62f, 0.92f, 84f, 34f),
                     menu(0.93f, 0.025f),

@@ -90,6 +90,12 @@ object NativeBridge {
     external fun tvDrawFrame()
 
     // Network link (GBA / GB). linkStart and linkStop: GL thread.
+    /** Controller type on port 0 (RETRO_DEVICE_*), e.g. the PlayStation DualShock. */
+    external fun setPortDevice(device: Int)
+    /** GL thread: labels of a multi-disc game's discs ("*" marks the one inside); empty otherwise. */
+    external fun disks(): Array<String>
+    external fun setDisk(index: Int): Boolean
+
     // Video recording (recorder.cpp). recStart on the GL thread.
     external fun recStart()
     external fun recStop()

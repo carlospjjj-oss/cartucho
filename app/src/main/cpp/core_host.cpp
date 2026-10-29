@@ -294,7 +294,7 @@ bool CoreHost::LoadGame(const std::string& rom_path, const std::string& save_pat
     }
     game_loaded_ = true;
     api_->get_system_av_info(&av_info_);
-    api_->set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
+    api_->set_controller_port_device(0, port_device_);
     LoadSaveRam();
     return true;
 }
@@ -360,6 +360,40 @@ void CoreHost::SetPointer(int16_t x, int16_t y, bool pressed) {
 
 size_t CoreHost::StateSize() {
     return game_loaded_ ? api_->serialize_size() : 0;
+}
+
+void CoreHost::SetPortDevice(unsigned device) {
+    port_device_ = device;
+    if (game_loaded_)
+        api_->set_controller_port_device(0, device);
+}
+
+unsigned CoreHost::DiskCount() const {
+    return (game_loaded_ && disk_.get_num_images) ? disk_.get_num_images() : 0;
+}
+
+int CoreHost::DiskIndex() const {
+    return (game_loaded_ && disk_.get_image_index) ? static_cast<int>(disk_.get_image_index()) : -1;
+}
+
+std::string CoreHost::DiskLabel(unsigned index) const {
+    char label[256] = {};
+    if (disk_.get_image_label && disk_.get_image_label(index, label, sizeof(label)) && label[0])
+        return label;
+    if (disk_.get_image_path && disk_.get_image_path(index, label, sizeof(label)) && label[0]) {
+        std::string path = label;
+        return path.substr(path.find_last_of('/') + 1);
+    }
+    return "Disco " + std::to_string(index + 1);
+}
+
+bool CoreHost::SetDisk(unsigned index) {
+    if (!game_loaded_ || !disk_.set_eject_state || !disk_.set_image_index || index >= DiskCount())
+        return false;
+    disk_.set_eject_state(true);
+    const bool ok = disk_.set_image_index(index);
+    disk_.set_eject_state(false);
+    return ok;
 }
 
 uint8_t* CoreHost::MemoryData(unsigned id, size_t* size) const {
@@ -748,6 +782,22 @@ bool CoreHost::Environment(unsigned cmd, void* data) {
         case RETRO_ENVIRONMENT_SET_CONTROLLER_INFO:
         case RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO:
             return true;
+
+        case RETRO_ENVIRONMENT_GET_DISK_CONTROL_INTERFACE_VERSION:
+            if (data)
+                *static_cast<unsigned*>(data) = 1;
+            return true;
+        case RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE: {
+            disk_ = {};
+            if (data)
+                std::memcpy(&disk_, data, sizeof(retro_disk_control_callback));
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE: {
+            if (data)
+                disk_ = *static_cast<const retro_disk_control_ext_callback*>(data);
+            return true;
+        }
 
         case RETRO_ENVIRONMENT_SET_MEMORY_MAPS: {
             const auto* map = static_cast<const retro_memory_map*>(data);

@@ -23,8 +23,14 @@ target_include_directories(rcheevos PUBLIC
 target_compile_definitions(rcheevos PUBLIC RC_CLIENT_SUPPORTS_HASH RC_HASH_NO_ENCRYPTED)
 target_compile_options(rcheevos PRIVATE -O2 -w)
 
+# CHD disc images, for identifying PlayStation games (third_party/libchdr, BSD).
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(CHDR_WANT_TESTS OFF CACHE BOOL "" FORCE)
+add_subdirectory(third_party/libchdr EXCLUDE_FROM_ALL)
+
 add_library(cartucho SHARED
     achievements.cpp
+    chd_reader.cpp
     android_jni.cpp
     audio_output.cpp
     core_host.cpp
@@ -38,8 +44,11 @@ add_library(cartucho SHARED
 
 target_compile_options(cartucho PRIVATE -Wall -Wextra -Wno-unused-parameter -O2)
 
+target_include_directories(cartucho PRIVATE third_party/libchdr/include)
+
 target_link_libraries(cartucho
     rcheevos
+    chdr-static
     GLESv3
     EGL
     aaudio
