@@ -89,6 +89,70 @@ class SettingsActivity : AppCompatActivity() {
             }.start()
         }
 
+        private fun refreshRa() {
+            val ctx = requireContext()
+            findPreference<Preference>("ra_account")?.summary =
+                if (RetroAchievements.signedIn(ctx))
+                    "Conectado como ${RetroAchievements.user(ctx)} (${RetroAchievements.score(ctx)} pontos) — toque para sair"
+                else "Toque para entrar com sua conta (é grátis em retroachievements.org)"
+        }
+
+        private fun raAccount() {
+            val ctx = requireContext()
+            if (RetroAchievements.signedIn(ctx)) {
+                MaterialAlertDialogBuilder(ctx)
+                    .setTitle(RetroAchievements.user(ctx))
+                    .setMessage("Sair da conta do RetroAchievements neste celular?")
+                    .setPositiveButton("Sair") { _, _ -> RetroAchievements.signOut(ctx); refreshRa() }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+                return
+            }
+            val pad = (20 * resources.displayMetrics.density).toInt()
+            val user = android.widget.EditText(ctx).apply { hint = "Usuário"; isSingleLine = true }
+            val pass = android.widget.EditText(ctx).apply {
+                hint = "Senha"
+                isSingleLine = true
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            }
+            val box = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(pad, pad / 2, pad, 0)
+                addView(user)
+                addView(pass)
+                addView(android.widget.TextView(ctx).apply {
+                    text = "A senha é usada só para entrar; o Cartucho guarda apenas o código de acesso."
+                    setPadding(0, pad / 2, 0, 0)
+                })
+            }
+            MaterialAlertDialogBuilder(ctx)
+                .setTitle("RetroAchievements")
+                .setView(box)
+                .setPositiveButton("Entrar") { _, _ ->
+                    val u = user.text.toString().trim()
+                    val p = pass.text.toString()
+                    if (u.isEmpty() || p.isEmpty()) return@setPositiveButton
+                    val waiting = MaterialAlertDialogBuilder(ctx).setTitle("Entrando…").setCancelable(false).show()
+                    Thread {
+                        val error = RetroAchievements.signIn(ctx, u, p)
+                        activity?.runOnUiThread {
+                            waiting.dismiss()
+                            refreshRa()
+                            MaterialAlertDialogBuilder(ctx)
+                                .setMessage(error ?: "Pronto! As conquistas aparecem quando você joga.")
+                                .setPositiveButton(android.R.string.ok, null)
+                                .show()
+                        }
+                    }.start()
+                }
+                .setNeutralButton("Criar conta") { _, _ ->
+                    startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://retroachievements.org/createaccount.php")))
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+
         private fun refreshBios() {
             for (bios in Bios.entries) {
                 findPreference<Preference>(bios.key)?.summary =
@@ -116,6 +180,10 @@ class SettingsActivity : AppCompatActivity() {
             findPreference<Preference>("backup_restore")?.setOnPreferenceClickListener {
                 restoreBackup.launch(arrayOf("application/zip", "application/octet-stream", "*/*")); true
             }
+            findPreference<Preference>("ra_account")?.setOnPreferenceClickListener {
+                raAccount(); true
+            }
+            refreshRa()
             findPreference<Preference>("pad_map_open")?.setOnPreferenceClickListener {
                 PadMap.showDialog(requireContext()); true
             }

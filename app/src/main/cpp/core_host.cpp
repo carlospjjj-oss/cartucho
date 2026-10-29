@@ -362,6 +362,14 @@ size_t CoreHost::StateSize() {
     return game_loaded_ ? api_->serialize_size() : 0;
 }
 
+uint8_t* CoreHost::MemoryData(unsigned id, size_t* size) const {
+    *size = 0;
+    if (!game_loaded_ || !api_->get_memory_data)
+        return nullptr;
+    *size = api_->get_memory_size(id);
+    return static_cast<uint8_t*>(api_->get_memory_data(id));
+}
+
 bool CoreHost::SerializeTo(std::vector<uint8_t>* out) {
     const size_t size = StateSize();
     if (size == 0)
@@ -739,7 +747,24 @@ bool CoreHost::Environment(unsigned cmd, void* data) {
         case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS:
         case RETRO_ENVIRONMENT_SET_CONTROLLER_INFO:
         case RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO:
-        case RETRO_ENVIRONMENT_SET_MEMORY_MAPS:
+            return true;
+
+        case RETRO_ENVIRONMENT_SET_MEMORY_MAPS: {
+            const auto* map = static_cast<const retro_memory_map*>(data);
+            mem_descs_.clear();
+            mem_names_.clear();
+            if (map && map->descriptors) {
+                mem_descs_.assign(map->descriptors, map->descriptors + map->num_descriptors);
+                mem_names_.reserve(mem_descs_.size());
+                for (auto& d : mem_descs_) {
+                    mem_names_.push_back(d.addrspace ? d.addrspace : "");
+                    d.addrspace = d.addrspace ? mem_names_.back().c_str() : nullptr;
+                }
+            }
+            mem_map_.descriptors = mem_descs_.data();
+            mem_map_.num_descriptors = static_cast<unsigned>(mem_descs_.size());
+            return true;
+        }
         case RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS:
         case RETRO_ENVIRONMENT_SET_SUPPORT_ACHIEVEMENTS:
         case RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL:

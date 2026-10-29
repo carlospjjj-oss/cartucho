@@ -142,10 +142,20 @@ retro_proc_address_t PlatformGetProcAddress(const char* sym) {
 using cartucho::AudioOutput;
 using cartucho::Filter;
 using cartucho::Session;
+using cartucho::Achievements;
 
 namespace {
 
 std::unique_ptr<Session> g_session;
+// The session holds the achievements too; the app's HTTP
+// thread reaches them only through this, under the lock.
+std::mutex g_ra_mutex;
+std::shared_ptr<Achievements> g_ra;
+
+std::shared_ptr<Achievements> CurrentAchievements() {
+    std::lock_guard<std::mutex> lock(g_ra_mutex);
+    return g_ra;
+}
 // The TV draws from its own thread; it must never see the session go away
 // under it (close() takes this too).
 std::mutex g_tv_mutex;
@@ -322,7 +332,61 @@ JNI_FN(void, reset)(JNIEnv*, jobject) {
     if (g_session) {
         g_session->host().Reset();
         g_session->ClearRewind();
+        if (auto ra = CurrentAchievements())
+            ra->Reset();
     }
+}
+
+// GL thread, game loaded: sign in to RetroAchievements and load this game's set.
+JNI_FN(void, raStart)(JNIEnv* env, jobject, jstring user, jstring token, jint console) {
+    if (!g_session)
+        return;
+    auto ra = std::make_shared<Achievements>(&g_session->host());
+    {
+        std::lock_guard<std::mutex> lock(g_ra_mutex);
+        g_ra = ra;
+    }
+    g_session->set_achievements(ra);
+    ra->Start(ToStd(env, user), ToStd(env, token), console);
+}
+
+// Any thread: next request for the server as {id, url, post data, content type}, or null.
+JNI_FN(jobjectArray, raTakeRequest)(JNIEnv* env, jobject) {
+    auto ra = CurrentAchievements();
+    Achievements::Request r;
+    if (!ra || !ra->TakeRequest(&r))
+        return nullptr;
+    jclass string_class = env->FindClass("java/lang/String");
+    jobjectArray out = env->NewObjectArray(4, string_class, nullptr);
+    env->SetObjectArrayElement(out, 0, ToJava(env, std::to_string(r.id)));
+    env->SetObjectArrayElement(out, 1, ToJava(env, r.url));
+    env->SetObjectArrayElement(out, 2, ToJava(env, r.post_data));
+    env->SetObjectArrayElement(out, 3, ToJava(env, r.content_type));
+    return out;
+}
+
+JNI_FN(void, raRespond)(JNIEnv* env, jobject, jint id, jint status, jbyteArray body) {
+    auto ra = CurrentAchievements();
+    if (!ra)
+        return;
+    std::string text;
+    if (body) {
+        const jsize n = env->GetArrayLength(body);
+        text.resize(static_cast<size_t>(n));
+        env->GetByteArrayRegion(body, 0, n, reinterpret_cast<jbyte*>(text.data()));
+    }
+    ra->Respond(id, status, std::move(text));
+}
+
+// The game's achievements, "1|title|description|points[|progress]" (1 = earned).
+JNI_FN(jobjectArray, raList)(JNIEnv* env, jobject) {
+    jclass string_class = env->FindClass("java/lang/String");
+    auto ra = CurrentAchievements();
+    const auto lines = ra ? ra->List() : std::vector<std::string>();
+    jobjectArray out = env->NewObjectArray(static_cast<jsize>(lines.size()), string_class, nullptr);
+    for (size_t i = 0; i < lines.size(); i++)
+        env->SetObjectArrayElement(out, static_cast<jsize>(i), ToJava(env, lines[i]));
+    return out;
 }
 
 // GL thread.
@@ -339,6 +403,10 @@ JNI_FN(void, close)(JNIEnv*, jobject) {
         if (g_audio)
             g_audio->Stop();
         g_audio.reset();
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_ra_mutex);
+        g_ra.reset();
     }
     g_session.reset();
 }

@@ -104,6 +104,17 @@
             app:defaultValue="true" />
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="Conquistas (RetroAchievements)">
+        <Preference
+            app:key="ra_account"
+            app:title="Conta do RetroAchievements" />
+        <SwitchPreferenceCompat
+            app:key="ra_enabled"
+            app:title="Ganhar conquistas nos jogos"
+            app:summary="GB, GBA, DS, NES, Super Nintendo, Mega Drive, Master System, Game Gear e PlayStation"
+            app:defaultValue="true" />
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="TV">
         <SwitchPreferenceCompat
             app:key="tv_mode"

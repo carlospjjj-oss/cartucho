@@ -11,7 +11,18 @@ mkdir -p "$OUT"
 export OUT
 CXX="${CXX:-g++} -std=c++17 -O1 -g -Wall -Wextra -Wno-unused-parameter -I$SRC"
 
-$CXX pacer_test.cpp $SRC/session.cpp $SRC/rewind.cpp $SRC/runahead.cpp $SRC/core_host.cpp $SRC/gl_presenter.cpp -lGLESv2 -lz -ldl -lpthread -o "$OUT/pacer_test"
+# RetroAchievements client library, as the app builds it (CMakeLists.txt).
+RA=$SRC/third_party/rcheevos
+RAFLAGS="-DRC_CLIENT_SUPPORTS_HASH -DRC_HASH_NO_ENCRYPTED -I$RA/include -I$RA/src/libretro"
+mkdir -p "$OUT/rcheevos"
+for c in $RA/src/{api,client,hash,libretro,runtime,util}/*.c; do
+    o="$OUT/rcheevos/$(basename "$c" .c).o"
+    [ "$o" -nt "$c" ] || gcc -c -O1 -w $RAFLAGS -I$SRC "$c" -o "$o"
+done
+ar rcs "$OUT/librcheevos.a" "$OUT"/rcheevos/*.o
+SESSION="$SRC/session.cpp $SRC/achievements.cpp $RAFLAGS $OUT/librcheevos.a"
+
+$CXX pacer_test.cpp $SESSION $SRC/rewind.cpp $SRC/runahead.cpp $SRC/core_host.cpp $SRC/gl_presenter.cpp -lGLESv2 -lz -ldl -lpthread -o "$OUT/pacer_test"
 $CXX resampler_test.cpp $SRC/resampler.cpp $SRC/core_host.cpp -ldl -o "$OUT/resampler_test"
 gcc -shared -fPIC -O1 -I$SRC fake_hw_core.c -o "$OUT/fake_hw_core.so"
 $CXX gl_test.cpp $SRC/core_host.cpp $SRC/gl_presenter.cpp -lEGL -lGLESv2 -ldl -o "$OUT/gl_test"
@@ -21,6 +32,7 @@ $CXX rewind_test.cpp $SRC/rewind.cpp $SRC/core_host.cpp -lz -ldl -lpthread -o "$
 $CXX devices_test.cpp $SRC/core_host.cpp -ldl -o "$OUT/devices_test"
 $CXX runahead_test.cpp $SRC/runahead.cpp $SRC/core_host.cpp -ldl -o "$OUT/runahead_test"
 $CXX link_test.cpp $SRC/core_host.cpp -ldl -lpthread -o "$OUT/link_test"
+$CXX achievements_test.cpp $SRC/achievements.cpp $SRC/core_host.cpp $RAFLAGS "$OUT/librcheevos.a" -ldl -lpthread -o "$OUT/achievements_test"
 
 "$OUT/pacer_test"
 "$OUT/resampler_test"
@@ -37,6 +49,7 @@ if [ $# -ge 2 ]; then
     "$OUT/host_test" "$1" "$2" "$OUT/frame.ppm" 400 2>/dev/null
     CARTUCHO_TEST_FD=1 "$OUT/host_test" "$1" "$2" "$OUT/frame-fd.ppm" 200 2>/dev/null | grep -E "load game|FAIL|passed"
     "$OUT/rewind_test" "$1" "$2" 2>/dev/null
+    case "$2" in *.gb|*.gbc) "$OUT/achievements_test" "$1" "$2" 2>/dev/null ;; esac
     # Run-ahead: off for the first two seconds, then (after a passing
     # self-check) exactly the normal run's picture N frames later. Checked on
     # the given ROM and on roms/vblank.gba (interrupt-driven like a game).

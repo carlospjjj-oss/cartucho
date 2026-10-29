@@ -249,9 +249,14 @@ void Session::Frame(double now) {
         } else {
             host_->SetAudioMuted(speed_ > 1.0);
             frames = pacer_.Step(now, host_->fps(), speed_.load(), audio_fill_);
-            for (int i = 0; i < frames; i++)
+            for (int i = 0; i < frames; i++) {
                 RunOneFrame();
+                if (ra_)
+                    ra_->DoFrame();  // achievements watch every real frame
+            }
         }
+        if (ra_ && frames == 0)
+            ra_->Idle();
         fps_window_frames_ += frames;
         if (now - fps_window_start_ >= 1.0) {
             measured_fps_ = fps_window_frames_ / (now - fps_window_start_);
@@ -264,6 +269,9 @@ void Session::Frame(double now) {
             last_flush_ = now;
             host_->FlushSaveRam();
         }
+    }
+    else if (ra_) {
+        ra_->Idle();  // paused: keep answering the server
     }
     const FrameSource source = presenter_.Prepare(*host_);
     presenter_.DrawSource(source, width_, height_);

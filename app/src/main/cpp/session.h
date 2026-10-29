@@ -11,6 +11,7 @@
 #include <mutex>
 #include <string>
 
+#include "achievements.h"
 #include "core_host.h"
 #include "gl_presenter.h"
 #include "rewind.h"
@@ -96,11 +97,15 @@ public:
     void TvSurfaceChanged(int width, int height);
     void TvDraw();
 
+    // RetroAchievements for this game (null when not signed in). GL thread.
+    void set_achievements(std::shared_ptr<Achievements> ra) { ra_ = std::move(ra); }
+
     // Measured emulation speed (frames per second) over the last second.
     double measured_fps() const { return measured_fps_; }
 
 private:
     std::unique_ptr<CoreHost> host_;
+    std::shared_ptr<Achievements> ra_;
     GlPresenter presenter_;
     FramePacer pacer_;
     int width_ = 1, height_ = 1;

@@ -69,6 +69,7 @@ class GameActivity : AppCompatActivity() {
     private var overlayStickX = 0f
     private var overlayStickY = 0f
     private var frameCounter = 0
+    @Volatile private var achievementsOn = false
     // Play time: counted while the game is on screen.
     private var playingSince = 0L
     private var messageUntil = 0L
@@ -540,6 +541,14 @@ class GameActivity : AppCompatActivity() {
                 NativeBridge.setRewindEnabled(prefs.rewind)
                 if (NativeBridge.runAheadPossible()) NativeBridge.setRunAhead(prefs.runAhead)
                 if (game.system != GameSystem.N3DS) cheats.apply()
+                // RetroAchievements, when signed in.
+                val raConsole = RetroAchievements.consoleId(game)
+                if (raConsole != 0 && RetroAchievements.enabled(this@GameActivity)) {
+                    NativeBridge.raStart(RetroAchievements.user(this@GameActivity),
+                        RetroAchievements.token(this@GameActivity), raConsole)
+                    achievementsOn = true
+                    RetroAchievements.pump { !isFinishing && !isDestroyed }
+                }
                 // Continue where the player left off.
                 val continued = prefs.resume && PlayStats.hasResume(this@GameActivity, game) &&
                     NativeBridge.loadState(PlayStats.resumeState(this@GameActivity, game).path) == null
@@ -678,6 +687,27 @@ class GameActivity : AppCompatActivity() {
         }
     }
 
+    private fun showAchievements() {
+        val lines = NativeBridge.raList().map { it.split('|') }
+        if (lines.isEmpty()) {
+            subDialog(MaterialAlertDialogBuilder(this)
+                .setTitle("Conquistas")
+                .setMessage("Ainda carregando, ou este jogo não tem conquistas no RetroAchievements.")
+                .setPositiveButton(R.string.ok, null))
+            return
+        }
+        val earned = lines.count { it[0] == "1" }
+        val items = lines.map { p ->
+            val mark = if (p[0] == "1") "🏆" else "🔒"
+            val progress = p.getOrNull(4)?.let { "  ($it)" } ?: ""
+            "$mark ${p.getOrElse(1) { "" }} · ${p.getOrElse(3) { "0" }} pts$progress\n${p.getOrElse(2) { "" }}"
+        }.toTypedArray()
+        subDialog(MaterialAlertDialogBuilder(this)
+            .setTitle("Conquistas: $earned de ${lines.size}")
+            .setItems(items, null)
+            .setPositiveButton(R.string.ok, null))
+    }
+
     private fun takeScreenshot() {
         glView.queueEvent {
             val data = NativeBridge.screenshot()
@@ -747,6 +777,7 @@ class GameActivity : AppCompatActivity() {
         if (game.system != GameSystem.N3DS) items += "Trapaças" + (if (cheats.list.any { it.enabled }) " (ativas)" else "") to {
             cheats.showDialog(this, { b -> modal.show(b) }) { glView.queueEvent { cheats.apply() } }
         }
+        if (achievementsOn) items += "🏆 Conquistas" to { showAchievements() }
         items += "Captura de tela" to { takeScreenshot() }
         items += getString(R.string.menu_edit_controls) to { startEditing() }
         items += (if (overlay.visibility == View.VISIBLE) getString(R.string.menu_hide_controls)

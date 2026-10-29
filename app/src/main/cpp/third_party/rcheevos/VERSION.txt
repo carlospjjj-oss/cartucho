@@ -1,0 +1,1 @@
+rcheevos bbc79b58a5a2a0b98dfbf2be6ca9e42c764661ce (https://github.com/RetroAchievements/rcheevos), MIT license. Copied: include/, src/ (no Windows integration, no encrypted 3DS hashing).

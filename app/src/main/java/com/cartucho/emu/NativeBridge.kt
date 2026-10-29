@@ -90,6 +90,14 @@ object NativeBridge {
     external fun tvDrawFrame()
 
     // Network link (GBA / GB). linkStart and linkStop: GL thread.
+    // RetroAchievements (achievements.cpp). raStart on the GL thread.
+    external fun raStart(user: String, token: String, console: Int)
+    /** {id, url, post data, content type} of the next server request, or null. */
+    external fun raTakeRequest(): Array<String>?
+    external fun raRespond(id: Int, status: Int, body: ByteArray)
+    /** "1|title|description|points[|progress]" per achievement (1 = earned). */
+    external fun raList(): Array<String>
+
     external fun linkSupported(): Boolean
     /** mode: 0 GBA cable, 1 GBA wireless adapter, 2 Game Boy cable. */
     external fun linkStart(mode: Int, server: Boolean, players: Int, host: String, port: Int)

@@ -85,6 +85,14 @@ public:
     // `save_path` is where battery saves (SRAM) live for this game, e.g.
     // ".../saves/Game.srm". Cores that manage their own saves ignore it.
     bool LoadGame(const std::string& rom_path, const std::string& save_path, std::string* error);
+
+    // The loaded game's bytes (empty for cores that open it by path) and path.
+    const std::vector<uint8_t>& rom_data() const { return rom_data_; }
+    const std::string& rom_path() const { return rom_path_; }
+    // The core's memory map, or null if it gave none.
+    const retro_memory_map* memory_map() const { return mem_descs_.empty() ? nullptr : &mem_map_; }
+    // retro_get_memory_data / _size (RETRO_MEMORY_SYSTEM_RAM...).
+    uint8_t* MemoryData(unsigned id, size_t* size) const;
     // An already open file holding the game (Android hands out descriptors,
     // not paths). Used instead of opening rom_path when the core takes the
     // game from memory; rom_path then only names it (cores look at the
@@ -209,6 +217,10 @@ private:
     std::string save_path_;
     std::vector<uint8_t> rom_data_;  // kept alive for cores without need_fullpath
     std::string rom_path_;
+    // The core's memory map (SET_MEMORY_MAPS), copied: achievements read it.
+    std::vector<retro_memory_descriptor> mem_descs_;
+    std::vector<std::string> mem_names_;
+    retro_memory_map mem_map_{};
     int rom_fd_ = -1;
 
     retro_system_info system_info_{};
