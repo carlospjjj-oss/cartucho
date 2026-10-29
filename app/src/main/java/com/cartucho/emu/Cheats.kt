@@ -15,7 +15,8 @@ import java.io.File
  * Replay, CodeBreaker...); the core does the parsing. Kept in
  * files/cheats/<console>/<game>.json.
  */
-class Cheats(context: Context, game: Game) {
+class Cheats(context: Context, private val game: Game) {
+    private val db = CheatDb(context)
     data class Cheat(val name: String, val code: String, val enabled: Boolean)
 
     private val file = File(context.filesDir, "cheats/${game.system.name}/${game.saveName}.json")
@@ -72,11 +73,11 @@ class Cheats(context: Context, game: Game) {
         val checked = list.map { it.enabled }.toBooleanArray()
         val builder = MaterialAlertDialogBuilder(context)
             .setTitle("Trapaças")
-            .setPositiveButton("Adicionar") { _, _ -> showAdd(context, show, changed) }
+            .setPositiveButton("Adicionar") { _, _ -> showAddChoice(context, show, changed) }
             .setNegativeButton("Fechar", null)
         if (list.isEmpty()) {
-            builder.setMessage("Nenhuma trapaça ainda. Toque em Adicionar e cole o código " +
-                "(GameShark, Action Replay, CodeBreaker…).")
+            builder.setMessage("Nenhuma trapaça ainda. Toque em Adicionar para buscar trapaças " +
+                "prontas deste jogo ou colar um código (GameShark, Action Replay, CodeBreaker…).")
         } else {
             builder.setMultiChoiceItems(names, checked) { _, which, on ->
                 toggle(which, on)
@@ -85,6 +86,107 @@ class Cheats(context: Context, game: Game) {
             if (list.isNotEmpty()) builder.setNeutralButton("Apagar") { _, _ -> showDelete(context, show, changed) }
         }
         show(builder)
+    }
+
+    private fun showAddChoice(
+        context: Context,
+        show: (MaterialAlertDialogBuilder) -> AlertDialog,
+        changed: () -> Unit,
+    ) {
+        if (!db.supported(game.system)) {
+            showAdd(context, show, changed)
+            return
+        }
+        show(MaterialAlertDialogBuilder(context)
+            .setTitle("Adicionar trapaça")
+            .setItems(arrayOf("Buscar trapaças prontas deste jogo", "Digitar um código")) { _, which ->
+                if (which == 0) searchReady(context, show, changed) else showAdd(context, show, changed)
+            })
+    }
+
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /** Finds this game's files in the libretro cheat database. */
+    private fun searchReady(
+        context: Context,
+        show: (MaterialAlertDialogBuilder) -> AlertDialog,
+        changed: () -> Unit,
+    ) {
+        val sources = db.find(game)
+        if (sources.isEmpty()) {
+            show(MaterialAlertDialogBuilder(context)
+                .setTitle("Nada encontrado")
+                .setMessage("A base de trapaças não tem este jogo. Você ainda pode digitar um código.")
+                .setPositiveButton("Digitar código") { _, _ -> showAdd(context, show, changed) }
+                .setNegativeButton("Fechar", null))
+            return
+        }
+        if (sources.size == 1) {
+            download(context, sources[0], show, changed)
+            return
+        }
+        show(MaterialAlertDialogBuilder(context)
+            .setTitle("Qual lista?")
+            .setItems(sources.map { it.label }.toTypedArray()) { _, which ->
+                download(context, sources[which], show, changed)
+            })
+    }
+
+    private fun download(
+        context: Context,
+        source: CheatDb.Source,
+        show: (MaterialAlertDialogBuilder) -> AlertDialog,
+        changed: () -> Unit,
+    ) {
+        val wait = show(MaterialAlertDialogBuilder(context)
+            .setTitle("Buscando trapaças…")
+            .setMessage(source.name)
+            .setCancelable(false))
+        Thread {
+            val result = runCatching { db.load(source) }
+            main.post {
+                wait.dismiss()
+                val entries = result.getOrNull()
+                if (entries.isNullOrEmpty()) {
+                    show(MaterialAlertDialogBuilder(context)
+                        .setTitle("Não deu para baixar")
+                        .setMessage("Confira a internet e tente de novo." +
+                            (result.exceptionOrNull()?.message?.let { "\n\n($it)" } ?: ""))
+                        .setPositiveButton("OK", null))
+                } else {
+                    pickEntries(context, entries, show, changed)
+                }
+            }
+        }.start()
+    }
+
+    private fun pickEntries(
+        context: Context,
+        entries: List<CheatDb.Entry>,
+        show: (MaterialAlertDialogBuilder) -> AlertDialog,
+        changed: () -> Unit,
+    ) {
+        val have = list.map { it.code }.toSet()
+        val chosen = BooleanArray(entries.size)
+        show(MaterialAlertDialogBuilder(context)
+            .setTitle("Escolha as trapaças (${entries.size})")
+            .setMultiChoiceItems(entries.map { e -> if (e.code in have) "✓ ${e.name}" else e.name }.toTypedArray(), chosen) { _, which, on ->
+                chosen[which] = on
+            }
+            .setPositiveButton("Adicionar e ativar") { _, _ ->
+                var added = 0
+                entries.forEachIndexed { i, e ->
+                    if (chosen[i] && e.code !in have) {
+                        list = list + Cheat(e.name, e.code, true)
+                        added++
+                    }
+                }
+                if (added > 0) {
+                    save()
+                    changed()
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null))
     }
 
     private fun showAdd(

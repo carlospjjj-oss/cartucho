@@ -56,6 +56,21 @@ jobs:
               | sed -n 's|^Named_Boxarts/\(.*\)\.png$|\1|p' > "app/src/main/assets/covers/$repo.txt"
             echo "$repo: $(wc -l < "app/src/main/assets/covers/$repo.txt") names"
           done
+      - name: Cheat name lists
+        # Names of the ready-made cheat files in the libretro database; the
+        # app downloads the one the player picks.
+        run: |
+          mkdir -p app/src/main/assets/cheats
+          git clone -q --depth 1 --filter=blob:none --no-checkout \
+            https://github.com/libretro/libretro-database.git lrdb
+          for dir in "Nintendo - Game Boy" "Nintendo - Game Boy Color" "Nintendo - Game Boy Advance" \
+                     "Nintendo - Nintendo DS" "Nintendo - Nintendo Entertainment System" \
+                     "Nintendo - Super Nintendo Entertainment System" "Sega - Mega Drive - Genesis" \
+                     "Sega - Master System - Mark III" "Sega - Game Gear" "Sony - PlayStation"; do
+            git -C lrdb ls-tree -z --name-only HEAD "cht/$dir/" | tr '\0' '\n' \
+              | sed -n 's|^cht/[^/]*/\(.*\)\.cht$|\1|p' > "app/src/main/assets/cheats/$dir.txt"
+            echo "$dir: $(wc -l < "app/src/main/assets/cheats/$dir.txt") cheat files"
+          done
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
