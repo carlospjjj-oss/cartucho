@@ -1,5 +1,6 @@
 package com.cartucho.emu
 
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -84,9 +85,67 @@ class SettingsActivity : AppCompatActivity() {
                 }
                 activity?.runOnUiThread {
                     waiting.dismiss()
+                    if (isAdded) refreshCloud()
                     MaterialAlertDialogBuilder(ctx).setMessage(message).setPositiveButton(android.R.string.ok, null).show()
                 }
             }.start()
+        }
+
+        private val createCloudFile = registerForActivityResult(
+            ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+            uri ?: return@registerForActivityResult
+            CloudSync.setFile(requireContext(), uri)
+            runBackup("Enviando para a nuvem…") { CloudSync.send(requireContext()) }
+            refreshCloud()
+        }
+
+        private val openCloudFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri ?: return@registerForActivityResult
+            CloudSync.setFile(requireContext(), uri)
+            refreshCloud()
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle("Baixar os saves desse arquivo?")
+                .setMessage("Os saves do arquivo substituem os deste celular com o mesmo nome.")
+                .setPositiveButton("Baixar") { _, _ ->
+                    runBackup("Baixando da nuvem…") { CloudSync.restore(requireContext()) }
+                }
+                .setNegativeButton("Agora não", null)
+                .show()
+        }
+
+        private fun refreshCloud() {
+            val ctx = requireContext()
+            val uri = CloudSync.uri(ctx)
+            val name = uri?.let { u ->
+                runCatching {
+                    ctx.contentResolver.query(u, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                        ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+                }.getOrNull() ?: Uri.decode(u.lastPathSegment ?: "")
+            }
+            findPreference<Preference>("cloud_file")?.summary = when {
+                uri == null -> "Nenhum. Toque para escolher um arquivo no Google Drive, OneDrive, Dropbox…"
+                else -> name + (CloudSync.lastError(ctx)?.let { "\n⚠ $it" } ?: "")
+            }
+            val last = CloudSync.lastSent(ctx)
+            findPreference<Preference>("cloud_send")?.summary =
+                if (last == 0L) "Ainda não enviado"
+                else "Último envio: " + java.text.DateFormat.getDateTimeInstance(
+                    java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(last))
+            findPreference<Preference>("cloud_send")?.isEnabled = uri != null
+            findPreference<Preference>("cloud_restore")?.isEnabled = uri != null
+        }
+
+        private fun cloudFile() {
+            val ctx = requireContext()
+            val items = mutableListOf(
+                "Criar um arquivo novo" to { createCloudFile.launch("Cartucho-saves.zip") },
+                "Usar o arquivo de outro celular" to { openCloudFile.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
+            )
+            if (CloudSync.uri(ctx) != null) items += "Parar de usar a nuvem" to { CloudSync.forget(ctx); refreshCloud() }
+            MaterialAlertDialogBuilder(ctx)
+                .setTitle("Saves na nuvem")
+                .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
+                .show()
         }
 
         private fun refreshRa() {
@@ -184,6 +243,23 @@ class SettingsActivity : AppCompatActivity() {
                 raAccount(); true
             }
             refreshRa()
+            findPreference<Preference>("cloud_file")?.setOnPreferenceClickListener { cloudFile(); true }
+            findPreference<Preference>("cloud_send")?.setOnPreferenceClickListener {
+                runBackup("Enviando para a nuvem…") { CloudSync.send(requireContext()) }
+                true
+            }
+            findPreference<Preference>("cloud_restore")?.setOnPreferenceClickListener {
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle("Baixar da nuvem?")
+                    .setMessage("Os saves do arquivo substituem os deste celular com o mesmo nome.")
+                    .setPositiveButton("Baixar") { _, _ ->
+                        runBackup("Baixando da nuvem…") { CloudSync.restore(requireContext()) }
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+                true
+            }
+            refreshCloud()
             findPreference<Preference>("pad_map_open")?.setOnPreferenceClickListener {
                 PadMap.showDialog(requireContext()); true
             }

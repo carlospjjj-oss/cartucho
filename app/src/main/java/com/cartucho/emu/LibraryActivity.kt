@@ -155,6 +155,8 @@ class LibraryActivity : AppCompatActivity() {
         }
         // "Recentes" order, play times and the continue row change after playing.
         refreshPlayInfo()
+        // Saves in the cloud: a fresh copy after playing.
+        io.execute { CloudSync.sendIfChanged(this) }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {

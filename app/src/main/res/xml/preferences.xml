@@ -237,6 +237,24 @@
             app:selectable="false" />
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="Saves na nuvem">
+        <Preference
+            app:key="cloud_file"
+            app:title="Arquivo na nuvem"
+            app:summary="Escolha um arquivo no Google Drive, OneDrive, Dropbox…" />
+        <SwitchPreferenceCompat
+            app:key="cloud_auto"
+            app:title="Enviar sozinho depois de jogar"
+            app:defaultValue="true" />
+        <Preference
+            app:key="cloud_send"
+            app:title="Enviar agora" />
+        <Preference
+            app:key="cloud_restore"
+            app:title="Baixar da nuvem"
+            app:summary="Traz os saves desse arquivo para este celular (útil ao trocar de aparelho)" />
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="Backup dos saves">
         <Preference
             app:key="backup_export"
