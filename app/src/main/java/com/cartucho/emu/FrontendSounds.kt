@@ -31,6 +31,7 @@ class FrontendSounds(private val context: Context) {
         .build()
     private val ids = HashMap<Sfx, Int>()
     private var music: MediaPlayer? = null
+    private var source: String? = null
     @Volatile private var released = false
 
     var effectsOn = true
@@ -57,7 +58,13 @@ class FrontendSounds(private val context: Context) {
     /** Starts (or resumes) the background music. */
     fun startMusic() {
         if (!musicOn || released) return
-        music?.let { if (!it.isPlaying) it.start(); return }
+        val wanted = Prefs.raw(context).getString("ui_music_uri", null) ?: "builtin"
+        music?.let { player ->
+            if (wanted == source) { if (!player.isPlaying) player.start(); return }
+            // The player picked other music in the settings.
+            synchronized(this) { player.release(); music = null }
+        }
+        source = wanted
         Thread {
             val custom = Prefs.raw(context).getString("ui_music_uri", null)
             val player = MediaPlayer()
