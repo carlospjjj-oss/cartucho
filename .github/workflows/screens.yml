@@ -7,6 +7,9 @@ name: Screenshots
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   screens:
     runs-on: ubuntu-24.04
@@ -53,3 +56,12 @@ jobs:
         with:
           name: screens
           path: shots/
+      - name: Publish as the "screens" release
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete screens --yes --cleanup-tag 2>/dev/null || true
+          gh release create screens shots/* --prerelease --title "Screenshots" \
+            --notes "Telas do app no emulador (workflow Screenshots)."
