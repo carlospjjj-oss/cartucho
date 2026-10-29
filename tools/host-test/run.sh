@@ -37,23 +37,28 @@ if [ $# -ge 2 ]; then
     "$OUT/host_test" "$1" "$2" "$OUT/frame.ppm" 400 2>/dev/null
     CARTUCHO_TEST_FD=1 "$OUT/host_test" "$1" "$2" "$OUT/frame-fd.ppm" 60 2>/dev/null | grep -E "load game|FAIL|passed"
     "$OUT/rewind_test" "$1" "$2" 2>/dev/null
-    # Run-ahead shows exactly the normal run's picture N frames later.
-    for n in 0 1 2; do "$OUT/runahead_test" "$1" "$2" $n 2>/dev/null > "$OUT/ra$n.txt"; done
-    python3 - "$OUT" <<'PY'
+    # Run-ahead: off for the first two seconds, then (after a passing
+    # self-check) exactly the normal run's picture N frames later. Checked on
+    # the given ROM and on roms/vblank.gba (interrupt-driven like a game).
+    for rom in "$2" roms/vblank.gba; do
+        for n in 0 1 2; do "$OUT/runahead_test" "$1" "$rom" $n 2>/dev/null > "$OUT/ra$n.txt"; done
+        python3 - "$OUT" "$rom" <<'PY'
 import sys
-out = sys.argv[1]
+out, rom = sys.argv[1], sys.argv[2]
 def load(p): return [l.split()[1] for l in open(p)]
 normal = load(f"{out}/ra0.txt")
 fail = 0
 for n in (1, 2):
     ra = load(f"{out}/ra{n}.txt")
-    same = [ra[k] == normal[k + n] for k in range(len(ra) - n)
+    start = all(ra[k] == normal[k] for k in range(118))
+    same = [ra[k] == normal[k + n] for k in range(125, len(ra) - n)
             if all((k + i) // 40 == k // 40 for i in range(1, n + 1))]
-    ok = all(same) and len(same) > 300
+    ok = start and all(same) and len(same) > 200
     fail += not ok
-    print(("ok    " if ok else "FAIL  ") + f"run-ahead {n}: {sum(same)}/{len(same)} frames match the future")
+    print(("ok    " if ok else "FAIL  ") + f"run-ahead {n} on {rom.split('/')[-1]}: {sum(same)}/{len(same)} frames match the future")
 sys.exit(fail)
 PY
+    done
     # Network link between two processes, when the core has the extension.
     if nm -D "$1" 2>/dev/null | grep -c cartucho_link_start > /dev/null; then
         "$OUT/link_test" "$1" "$2" server 5791 2>/dev/null &

@@ -178,6 +178,10 @@ void Session::RunOneFrame() {
     const int link = link_state_;
     run_ahead_.set_frames(link == 0 || link == 2 ? 0 : run_ahead_frames_.load());
     run_ahead_.RunFrame(*host_);
+    if (run_ahead_.TakeFailure()) {
+        PlatformLog(2, "Run-ahead off: this game does not reload states exactly");
+        host_->PostMessage("Run-ahead desligado: não é compatível com este jogo");
+    }
     if (rewind_available_ && rewind_enabled_ && ++frames_since_capture_ >= rewind_interval_) {
         frames_since_capture_ = 0;
         // Run-ahead already saved the real state; reuse it.

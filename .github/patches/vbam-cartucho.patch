@@ -151,6 +151,89 @@ index 0000000..c9e4cf7
 +// stay in English.
 +#pragma once
 +#define gettext(x) (x)
+diff --git a/src/libretro/libretro.cpp b/src/libretro/libretro.cpp
+index 2b936e8..93f7744 100644
+--- a/src/libretro/libretro.cpp
++++ b/src/libretro/libretro.cpp
+@@ -28,6 +28,7 @@
+ #include "core/gba/gbaGlobals.h"
+ #include "core/gba/gbaRtc.h"
+ #include "core/gba/gbaSound.h"
++#include "core/gba/gbaScheduler.h"
+ 
+ #if __STDC_WANT_SECURE_LIB__
+ #define snprintf sprintf_s
+@@ -1839,6 +1840,17 @@ void retro_run(void)
+ 
+ static unsigned serialize_size = 0;
+ 
++// Cartucho: the GBA event scheduler (IRQ delivery, halt wake-up, HBlank
++// DMA, SIO) is not part of CPUWriteState; without it a loaded state
++// resumes with stale or missing events, which run-ahead and rewind (a load
++// every frame) turn into freezes. It goes after the core's state behind a
++// marker, so states without it still load.
++static constexpr uint32_t kCartuchoSchedMagic = 0x44484353;  // "SCHD"
++static size_t CartuchoSchedBytes()
++{
++    return type == IMAGE_GBA ? 4 + gbaScheduler::SaveStateSize() : 0;
++}
++
+ size_t retro_serialize_size(void)
+ {
+     if (!core)
+@@ -1852,25 +1864,45 @@ size_t retro_serialize_size(void)
+     if (enable_variable_serialization_size) {
+         serialize_size = core->emuWriteState(serializationBuffer);
+     }
+-    return serialize_size;
++    return serialize_size + CartuchoSchedBytes();
+ }
+ 
+ bool retro_serialize(void* data, size_t size)
+ {
+     if (!core)
+         return false;
+-    if (size == serialize_size)
+-        return core->emuWriteState((uint8_t*)data);
+-    if (enable_variable_serialization_size)
+-        return core->emuWriteState((uint8_t*)data);
+-    return false;
++    const size_t extra = CartuchoSchedBytes();
++    if (size < extra)
++        return false;
++    if (size - extra != serialize_size && !enable_variable_serialization_size)
++        return false;
++    const unsigned written = core->emuWriteState((uint8_t*)data);
++    if (!written)
++        return false;
++    if (extra) {
++        // At the very end, where retro_unserialize looks for it.
++        uint8_t* tail = (uint8_t*)data + size - extra;
++        memcpy(tail, &kCartuchoSchedMagic, 4);
++        gbaScheduler::SaveState(tail + 4);
++    }
++    return true;
+ }
+ 
+ bool retro_unserialize(const void* data, [[maybe_unused]] size_t size)
+ {
+     if (!core)
+         return false;
+-    return core->emuReadState((uint8_t*)data);
++    if (!core->emuReadState((uint8_t*)data))
++        return false;
++    const size_t extra = CartuchoSchedBytes();
++    if (extra && size >= extra) {
++        const uint8_t* tail = (const uint8_t*)data + size - extra;
++        uint32_t magic = 0;
++        memcpy(&magic, tail, 4);
++        if (magic == kCartuchoSchedMagic)
++            gbaScheduler::LoadState(tail + 4);
++    }
++    return true;
+ }
+ 
+ void retro_cheat_reset(void)
 diff --git a/src/libretro/link.T b/src/libretro/link.T
 index 78f657b..c9648ec 100644
 --- a/src/libretro/link.T

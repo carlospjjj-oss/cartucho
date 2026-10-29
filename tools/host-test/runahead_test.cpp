@@ -36,9 +36,11 @@ int main(int argc, char** argv) {
         // what the player is pressing now.
         host.SetButtons(InputFor(f));
         ra.RunFrame(host);
+        if (ra.TakeFailure()) std::fprintf(stderr, "verify failed at frame %d\n", f);
         uint64_t h = 1469598103934665603ull;
         for (uint8_t b : host.frame().rgba) h = (h ^ b) * 1099511628211ull;
         std::printf("%d %016llx\n", f, static_cast<unsigned long long>(h));
     }
+    std::fprintf(stderr, "verdict %d\n", static_cast<int>(ra.verdict()));
     return 0;
 }

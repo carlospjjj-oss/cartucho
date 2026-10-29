@@ -143,6 +143,11 @@ public:
     // Writes battery save RAM if it changed since the last flush.
     void FlushSaveRam();
 
+    // Shows a message as if the core had sent it (frontend notices).
+    void PostMessage(const std::string& text) {
+        std::lock_guard<std::mutex> lock(message_mutex_);
+        message_ = text;
+    }
     // Last on-screen message the core asked to show; empty once taken.
     std::string TakeMessage();
     // The core requested shutdown (RETRO_ENVIRONMENT_SHUTDOWN).
