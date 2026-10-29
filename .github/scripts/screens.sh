@@ -24,6 +24,7 @@ start() {
 # Landscape (rotation off, user rotation 90°).
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 1
+adb shell wm user-rotation lock 1 || adb shell cmd window user-rotation lock 1
 start console
 shot 01-home-landscape 2
 key KEYCODE_DPAD_RIGHT; key KEYCODE_DPAD_RIGHT
@@ -52,6 +53,7 @@ key KEYCODE_BACK
 
 # Portrait.
 adb shell settings put system user_rotation 0
+adb shell wm user-rotation lock 0 || adb shell cmd window user-rotation lock 0
 start console
 shot 10-home-portrait 2
 key KEYCODE_DPAD_CENTER
