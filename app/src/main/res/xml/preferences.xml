@@ -64,6 +64,10 @@
             android:max="150"
             app:defaultValue="100"
             app:showSeekBarValue="true" />
+        <Preference
+            app:key="pad_map_open"
+            app:title="Configurar controle Bluetooth / USB"
+            app:summary="Escolha o que cada botão do controle faz, incluindo acelerar, voltar no tempo e salvar rápido" />
         <SwitchPreferenceCompat
             app:key="haptics"
             app:title="Vibrar ao tocar"

@@ -116,6 +116,9 @@ class SettingsActivity : AppCompatActivity() {
             findPreference<Preference>("backup_restore")?.setOnPreferenceClickListener {
                 restoreBackup.launch(arrayOf("application/zip", "application/octet-stream", "*/*")); true
             }
+            findPreference<Preference>("pad_map_open")?.setOnPreferenceClickListener {
+                PadMap.showDialog(requireContext()); true
+            }
             findPreference<Preference>("error_report")?.setOnPreferenceClickListener {
                 ErrorReport.show(requireActivity() as AppCompatActivity); true
             }

@@ -88,7 +88,15 @@ class GameActivity : AppCompatActivity() {
         hideSystemBars()
 
         buildViews()
-        gamepad = GamepadInput(onChange = ::pushInput, onMenu = ::showMenu)
+        gamepad = GamepadInput(onChange = ::pushInput, onMenu = ::showMenu, custom = PadMap.load(this)) { action, down ->
+            if (!loaded) return@GamepadInput
+            when (action) {
+                PadMap.FAST_FORWARD -> if (down) toggleFastForward()
+                PadMap.REWIND -> padListener.onRewind(down)
+                PadMap.QUICK_SAVE -> if (down) quickState(save = true)
+                PadMap.QUICK_LOAD -> if (down) quickState(save = false)
+            }
+        }
         gamepad.stickAsDpad = game.system != GameSystem.N3DS
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -185,7 +193,7 @@ class GameActivity : AppCompatActivity() {
         }
 
         overlay = ControllerOverlay(this).apply {
-            listener = OverlayListener()
+            listener = padListener
             onSelectionChanged = { c -> editPanel.findViewWithTag<View>("size")?.isEnabled = c != null }
         }
         tvLabel = TextView(this).apply {
@@ -610,6 +618,8 @@ class GameActivity : AppCompatActivity() {
         }
         return super.dispatchTouchEvent(event)
     }
+
+    private val padListener by lazy { OverlayListener() }
 
     private inner class OverlayListener : ControllerOverlay.Listener {
         override fun onButtons(mask: Int) {

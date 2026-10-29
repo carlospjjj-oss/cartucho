@@ -10,7 +10,16 @@ import kotlin.math.abs
  * Nintendo games expect: the bottom face button (Xbox A / PlayStation cross)
  * is B, the right one is A.
  */
-class GamepadInput(private val onChange: () -> Unit, private val onMenu: () -> Unit) {
+class GamepadInput(
+    private val onChange: () -> Unit,
+    private val onMenu: () -> Unit,
+    /** The player's own mapping (PadMap): key code -> Retro.* or a PadMap action. */
+    custom: Map<Int, Int> = emptyMap(),
+    /** A PadMap action pressed (true) or released (false). */
+    private val onAction: (Int, Boolean) -> Unit = { _, _ -> },
+) {
+    // Defaults, minus buttons the player moved to another key, plus theirs.
+    private val map: Map<Int, Int> = KEY_MAP.filterValues { it !in custom.values } + custom
 
     var buttons = 0
         private set
@@ -37,11 +46,23 @@ class GamepadInput(private val onChange: () -> Unit, private val onMenu: () -> U
 
     fun onKey(event: KeyEvent): Boolean {
         val code = event.keyCode
-        if (code == KeyEvent.KEYCODE_BUTTON_MODE || (code == KeyEvent.KEYCODE_BACK && isGamepad(event.source))) {
+        val mapped = map[code]
+        if (mapped != null && mapped < 0) {
+            if (isGamepad(event.source)) {
+                gamepadSeen = true
+                lastDeviceId = event.deviceId
+            }
+            if (event.repeatCount == 0) {
+                if (mapped == PadMap.MENU) { if (event.action == KeyEvent.ACTION_UP) onMenu() }
+                else onAction(mapped, event.action == KeyEvent.ACTION_DOWN)
+            }
+            return true
+        }
+        if (mapped == null && (code == KeyEvent.KEYCODE_BUTTON_MODE || (code == KeyEvent.KEYCODE_BACK && isGamepad(event.source)))) {
             if (event.action == KeyEvent.ACTION_UP) onMenu()
             return true
         }
-        val bit = KEY_MAP[code] ?: return false
+        val bit = mapped ?: return false
         if (isGamepad(event.source)) {
             gamepadSeen = true
             lastDeviceId = event.deviceId
