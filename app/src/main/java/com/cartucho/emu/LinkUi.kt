@@ -59,10 +59,31 @@ class LinkUi(
             return
         }
         showModal(dialog()
-            .setTitle("Link cable pela rede")
-            .setItems(arrayOf("Hospedar partida", "Entrar numa partida")) { _, which ->
-                if (which == 0) chooseHostMode() else browse()
+            .setTitle("Link cable")
+            .setItems(arrayOf("Hospedar partida (mesmo Wi-Fi)", "Entrar numa partida (mesmo Wi-Fi)",
+                "🌐 Jogar pela internet")) { _, which ->
+                when (which) {
+                    0 -> { internet = false; chooseHostMode() }
+                    1 -> browse()
+                    else -> internetMenu()
+                }
             })
+    }
+
+    private var internet = false
+
+    /** Over the internet: a virtual network (easy) or the router's port (advanced). */
+    private fun internetMenu() {
+        showModal(dialog()
+            .setTitle("Jogar pela internet")
+            .setMessage("Os dois aparelhos precisam se enxergar pela internet. O jeito mais fácil: " +
+                "instalem o app Tailscale (grátis) nos dois e entrem na mesma conta ou rede — " +
+                "funciona também com ZeroTier ou Radmin VPN.\n\n" +
+                "Sem esses apps, quem hospeda precisa abrir a porta ${LinkDiscovery.DEFAULT_LINK_PORT} (TCP e UDP) " +
+                "no roteador.\n\nA conexão pela internet tem mais atraso que no Wi-Fi.")
+            .setPositiveButton("Hospedar") { _, _ -> internet = true; chooseHostMode() }
+            .setNeutralButton("Entrar por endereço") { _, _ -> typeAddress() }
+            .setNegativeButton(android.R.string.cancel, null))
     }
 
     private fun dialog() = MaterialAlertDialogBuilder(activity)
@@ -96,12 +117,25 @@ class LinkUi(
         )
         val ips = LinkDiscovery.localAddresses().joinToString(", ").ifEmpty { "sem rede" }
         glView.queueEvent { NativeBridge.linkStart(mode, true, players, "", LinkDiscovery.DEFAULT_LINK_PORT) }
-        waitForConnection(
-            title = "Esperando jogadores…",
-            intro = "${LinkDiscovery.modeName(mode)}, $players jogadores.\n" +
-                "No outro aparelho (mesmo Wi-Fi), abra o jogo e toque em Link cable → Entrar numa partida.\n" +
-                "Seu IP: $ips",
-        )
+        if (!internet) {
+            waitForConnection(
+                title = "Esperando jogadores…",
+                intro = "${LinkDiscovery.modeName(mode)}, $players jogadores.\n" +
+                    "No outro aparelho (mesmo Wi-Fi), abra o jogo e toque em Link cable → Entrar numa partida.\n" +
+                    "Seu IP: $ips",
+            )
+            return
+        }
+        val vpn = LinkDiscovery.vpnAddresses()
+        val base = "${LinkDiscovery.modeName(mode)}, $players jogadores.\n" +
+            "No outro aparelho: Link cable → Jogar pela internet → Entrar por endereço, e digite " +
+            (if (vpn.isNotEmpty()) "o endereço da rede virtual:\n${vpn.joinToString("  ou  ")}"
+             else "seu endereço da internet (com a porta ${LinkDiscovery.DEFAULT_LINK_PORT} aberta no roteador):")
+        val update = waitForConnection(title = "Esperando pela internet…", intro = base + if (vpn.isEmpty()) "\nbuscando…" else "")
+        if (vpn.isEmpty()) Thread {
+            val ip = LinkDiscovery.publicAddress()
+            main.post { update(base + "\n" + (ip ?: "não foi possível descobrir (sem internet?)")) }
+        }.start()
     }
 
     private fun browse() {
@@ -157,20 +191,49 @@ class LinkUi(
         }
     }
 
+    private val recent: List<String>
+        get() = Prefs.raw(activity).getString("link_recent", "")!!.split('\n').filter { it.isNotBlank() }
+
+    private fun remember(address: String) {
+        val list = (listOf(address) + recent.filter { it != address }).take(5)
+        Prefs.raw(activity).edit().putString("link_recent", list.joinToString("\n")).apply()
+    }
+
+    /** IP, name (e.g. a Tailscale machine name) or address:port; the recent ones listed. */
     private fun typeAddress() {
         val input = EditText(activity).apply {
-            hint = "192.168.0.10"
+            hint = "192.168.0.10, 100.101.1.2 ou nome"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            setText(recent.firstOrNull() ?: "")
+            selectAll()
+        }
+        val box = android.widget.LinearLayout(activity).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(48, 16, 48, 0)
+            addView(input)
+            for (r in recent.drop(1)) addView(TextView(activity).apply {
+                text = "↺ $r"
+                setPadding(8, 20, 8, 8)
+                setOnClickListener { input.setText(r) }
+            })
         }
         showModal(dialog()
-            .setTitle("IP do aparelho que está hospedando")
-            .setView(FrameLayout(activity).apply { setPadding(48, 16, 48, 0); addView(input) })
+            .setTitle("Endereço de quem está hospedando")
+            .setView(box)
             .setPositiveButton("Conectar") { _, _ ->
                 val text = input.text.toString().trim()
                 if (text.isNotEmpty()) {
+                    remember(text)
                     val host = text.substringBefore(':')
                     val port = text.substringAfter(':', "").toIntOrNull() ?: LinkDiscovery.DEFAULT_LINK_PORT
-                    join(if (isGb) 2 else 0, 2, host, port)
+                    // Names are looked up here, not on the game's thread.
+                    Thread {
+                        val ip = try { java.net.InetAddress.getByName(host).hostAddress } catch (e: Exception) { null }
+                        main.post {
+                            if (ip == null) failure("Não encontrei \"$host\".")
+                            else join(if (isGb) 2 else 0, 2, ip, port)
+                        }
+                    }.start()
                 }
             }
             .setNegativeButton(android.R.string.cancel, null))
@@ -181,8 +244,12 @@ class LinkUi(
         waitForConnection("Conectando…", "Entrando na partida em $address.")
     }
 
-    /** Shows progress until the native side reports connected or failed. */
-    private fun waitForConnection(title: String, intro: String) {
+    /**
+     * Shows progress until the native side reports connected or failed.
+     * Returns a function that replaces the intro text.
+     */
+    private fun waitForConnection(title: String, intro: String): (String) -> Unit {
+        var introText = intro
         val text = TextView(activity).apply { setPadding(48, 24, 48, 8); this.text = intro }
         var finished = false
         val d = showModal(dialog()
@@ -199,7 +266,7 @@ class LinkUi(
                 if (finished) return
                 val state = NativeBridge.linkState()
                 val msg = NativeBridge.linkMessage()
-                text.text = if (msg.isNullOrEmpty()) intro else "$intro\n\n$msg"
+                text.text = if (msg.isNullOrEmpty()) introText else "$introText\n\n$msg"
                 when (state) {
                     0 -> {
                         finished = true
@@ -218,12 +285,13 @@ class LinkUi(
             }
         }
         main.postDelayed(tick, 400)
+        return { s -> introText = s; text.text = s }
     }
 
     private fun failure(message: String) {
         showModal(dialog()
             .setTitle("Link não conectou")
-            .setMessage("$message\n\nConfira se os dois aparelhos estão no mesmo Wi-Fi e com o mesmo jogo aberto.")
+            .setMessage("$message\n\nConfira se os dois aparelhos estão na mesma rede (Wi-Fi, ou Tailscale/ZeroTier pela internet) e com o mesmo jogo aberto.")
             .setPositiveButton(android.R.string.ok, null))
     }
 

@@ -89,6 +89,36 @@ object LinkDiscovery {
     }
 
     /** This phone's Wi-Fi/hotspot IPv4 addresses, for showing to the player. */
+    /**
+     * Addresses on a virtual network (Tailscale, ZeroTier, Radmin, Hamachi…),
+     * which reach the other player over the internet: VPN interfaces and
+     * Tailscale's 100.64.0.0/10 range.
+     */
+    fun vpnAddresses(): List<String> = try {
+        NetworkInterface.getNetworkInterfaces().toList()
+            .filter { it.isUp && !it.isLoopback }
+            .flatMap { nif ->
+                nif.inetAddresses.toList().filterIsInstance<Inet4Address>().filter { a ->
+                    val b = a.address
+                    val tailscale = (b[0].toInt() and 0xff) == 100 && (b[1].toInt() and 0xc0) == 64
+                    tailscale || nif.name.startsWith("tun") || nif.name.startsWith("zt") || nif.name.startsWith("tailscale")
+                }.map { it.hostAddress ?: "" }
+            }
+            .filter { it.isNotEmpty() }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    /** This connection's address on the internet (asks a public service), or null. */
+    fun publicAddress(): String? = try {
+        val conn = java.net.URL("https://api.ipify.org").openConnection() as java.net.HttpURLConnection
+        conn.connectTimeout = 6000
+        conn.readTimeout = 6000
+        conn.inputStream.bufferedReader().use { it.readText().trim() }.takeIf { it.matches(Regex("[0-9.]+")) }
+    } catch (e: Exception) {
+        null
+    }
+
     fun localAddresses(): List<String> = try {
         NetworkInterface.getNetworkInterfaces().toList()
             .filter { it.isUp && !it.isLoopback }
