@@ -131,6 +131,14 @@ class LibraryActivity : AppCompatActivity() {
         buildChips()
         applyFilter()
         if (store.folders.isNotEmpty() || store.looseGames().isNotEmpty()) rescan()
+        // Automated screenshots (CI emulator): a game folder by path.
+        intent.getStringExtra("cartucho_test_folder")?.let { path ->
+            store.addFolder(Uri.fromFile(java.io.File(path)).toString())
+            rescan()
+        }
+        intent.getStringExtra("cartucho_test_style")?.let { style ->
+            androidx.preference.PreferenceManager.getDefaultSharedPreferences(this).edit().putString("ui_style", style).apply()
+        }
         if (Prefs(this).uiStyle == "console") startConsoleUi()
         handlePlayIntent(intent)
     }
@@ -490,12 +498,24 @@ class LibraryActivity : AppCompatActivity() {
         try {
             pickFolder.launch(null)
         } catch (e: android.content.ActivityNotFoundException) {
+            // TVs without the picker: a fixed folder, read with all-files access.
+            val dir = java.io.File(android.os.Environment.getExternalStorageDirectory(), "Cartucho")
             MaterialAlertDialogBuilder(this)
                 .setTitle("Sem seletor de pastas")
-                .setMessage("Este aparelho não tem o seletor de pastas do Android (comum em algumas TVs). " +
-                    "Instale um gerenciador de arquivos (por exemplo \"Files by Google\" ou \"X-plore\") e tente de novo, " +
-                    "ou use \"Abrir arquivo\" no menu para abrir um jogo por vez.")
-                .setPositiveButton(R.string.ok, null)
+                .setMessage("Este aparelho não tem o seletor de pastas do Android (comum em TVs). " +
+                    "Coloque os jogos na pasta \"Cartucho\" da memória (${dir.path}) — por pendrive, " +
+                    "app de arquivos ou pelo computador — e toque em Usar essa pasta.")
+                .setPositiveButton("Usar essa pasta") { _, _ ->
+                    if (!Storage.hasFileAccess(this)) {
+                        runCatching { startActivity(Storage.allFilesAccessIntent(this)) }
+                        notice("Permita o acesso a todos os arquivos e toque em Adicionar pasta de novo.")
+                    } else {
+                        dir.mkdirs()
+                        store.addFolder(Uri.fromFile(dir).toString())
+                        rescan()
+                    }
+                }
+                .setNegativeButton(android.R.string.cancel, null)
                 .show()
         }
     }

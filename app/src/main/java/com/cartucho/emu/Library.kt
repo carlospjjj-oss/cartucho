@@ -115,7 +115,10 @@ class LibraryStore(private val context: Context) {
     fun scan(): List<Game> {
         val found = LinkedHashMap<String, Game>()
         for (folder in folders) {
-            val root = DocumentFile.fromTreeUri(context, Uri.parse(folder)) ?: continue
+            // A folder picked in the system picker, or one given by path
+            // (file://, with all-files access: TVs without a picker, tests).
+            val root = if (folder.startsWith("file://")) DocumentFile.fromFile(File(Uri.parse(folder).path ?: continue))
+                       else DocumentFile.fromTreeUri(context, Uri.parse(folder)) ?: continue
             val tree = Tree()
             walk(root, "", 0, tree)
             val local = LocalCovers(context, tree.images, tree.gamelists)

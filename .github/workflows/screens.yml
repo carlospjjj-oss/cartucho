@@ -1,0 +1,55 @@
+# Installs the latest APK on an Android emulator, fills the library with
+# freely distributable test ROMs and takes screenshots of the main screens
+# (console look and grid, landscape and portrait, a game running). Run it by
+# hand; the pictures come out as the "screens" artifact.
+name: Screenshots
+
+on:
+  workflow_dispatch:
+
+jobs:
+  screens:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Latest APK and test ROMs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release download latest -p '*.apk' -O app.apk
+          mkdir -p roms/GB roms/NES roms/SNES roms/SMS roms/PS1
+          git clone -q --depth 1 https://github.com/retrio/gb-test-roms.git t-gb
+          git clone -q --depth 1 https://github.com/christopherpow/nes-test-roms.git t-nes
+          git clone -q --depth 1 https://github.com/PeterLemon/SNES.git t-snes
+          git clone -q --depth 1 https://github.com/PeterLemon/SMS.git t-sms
+          cp t-gb/cpu_instrs/cpu_instrs.gb "roms/GB/CPU Instrs (Test).gb"
+          cp t-gb/instr_timing/instr_timing.gb "roms/GB/Instr Timing (Test).gb"
+          cp t-gb/mem_timing/mem_timing.gb "roms/GB/Mem Timing (Test).gb"
+          cp t-nes/blargg_nes_cpu_test5/official.nes "roms/NES/CPU Test (Test).nes"
+          cp t-snes/PPU/Mode7/RotZoom/RotZoom.sfc "roms/SNES/Mode 7 RotZoom (Demo).sfc"
+          cp t-snes/PPU/Mode7/Perspective/Perspective.sfc "roms/SNES/Mode 7 Perspective (Demo).sfc"
+          cp t-sms/VDP/HelloWorld/HelloWorld.sms "roms/SMS/Hello World (Demo).sms"
+          cp tools/host-test/roms/disc.cue tools/host-test/roms/disc.bin roms/PS1/
+          find roms -type f | sort
+      - name: Run on the emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          disable-animations: false
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: bash .github/scripts/screens.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screens
+          path: shots/

@@ -27,6 +27,7 @@ object Storage {
     /** The file system path behind a document from internal storage or an SD card. */
     fun realPath(uriString: String): String? {
         val uri = Uri.parse(uriString)
+        if (uri.scheme == "file") return uri.path
         if (uri.authority != EXTERNAL_AUTHORITY) return null
         val id = try { DocumentsContract.getDocumentId(uri) } catch (e: Exception) { return null }
         val volume = id.substringBefore(':', "")
