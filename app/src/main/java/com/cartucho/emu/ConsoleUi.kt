@@ -66,7 +66,10 @@ class ConsoleUi(private val context: Context, private val host: Host) {
         val color: Int,
         val games: List<Game>,
         val subtitle: String,
-    )
+    ) {
+        /** The card's picture (an original drawing, see tools/art/consoles.py). */
+        val art get() = artFor(key)
+    }
 
     private val density = context.resources.displayMetrics.density
     private fun dp(v: Float) = (v * density).toInt()
@@ -141,7 +144,8 @@ class ConsoleUi(private val context: Context, private val host: Host) {
     private val emptyHint = TextView(context)
     private var cardWidth = 0
 
-    private inner class CardHolder(val card: FrameLayout, val label: TextView, val name: TextView, val count: TextView) :
+    private inner class CardHolder(val card: FrameLayout, val glow: View, val art: ImageView, val label: TextView,
+                                   val name: TextView, val count: TextView) :
         RecyclerView.ViewHolder(card)
 
     private val carouselAdapter = object : RecyclerView.Adapter<CardHolder>() {
@@ -166,6 +170,11 @@ class ConsoleUi(private val context: Context, private val host: Host) {
                 setTextColor(Color.argb(220, 255, 255, 255))
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             }
+            // A soft light behind the drawing, then the drawing itself.
+            val glow = View(context)
+            card.addView(glow, FrameLayout.LayoutParams(0, 0, Gravity.CENTER_HORIZONTAL or Gravity.TOP))
+            val art = ImageView(context).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
+            card.addView(art, FrameLayout.LayoutParams(0, 0, Gravity.CENTER_HORIZONTAL or Gravity.TOP))
             card.addView(label, FrameLayout.LayoutParams(MATCH, MATCH).apply { bottomMargin = dp(40) })
             val bottom = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
@@ -174,7 +183,7 @@ class ConsoleUi(private val context: Context, private val host: Host) {
                 addView(count)
             }
             card.addView(bottom, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM))
-            return CardHolder(card, label, name, count)
+            return CardHolder(card, glow, art, label, name, count)
         }
 
         override fun onBindViewHolder(h: CardHolder, position: Int) {
@@ -186,8 +195,19 @@ class ConsoleUi(private val context: Context, private val host: Host) {
                 intArrayOf(ColorUtils.blendARGB(c.color, Color.WHITE, 0.12f), ColorUtils.blendARGB(c.color, Color.BLACK, 0.55f))).apply {
                 cornerRadius = dp(22).toFloat()
             }
-            h.label.text = c.label
-            h.label.setTextSize(TypedValue.COMPLEX_UNIT_PX, cardWidth * if (c.label.length > 3) 0.2f else 0.26f)
+            val cardHeight = (cardWidth * 1.15f).toInt()
+            val artSize = (cardWidth * 0.78f).toInt()
+            val artTop = ((cardHeight - dp(52) - artSize) / 2).coerceAtLeast(dp(6))
+            (h.art.layoutParams as FrameLayout.LayoutParams).apply { width = artSize; height = artSize; topMargin = artTop }
+            (h.glow.layoutParams as FrameLayout.LayoutParams).apply { width = artSize; height = artSize; topMargin = artTop }
+            h.glow.background = GradientDrawable().apply {
+                gradientType = GradientDrawable.RADIAL_GRADIENT
+                gradientRadius = artSize / 2f
+                colors = intArrayOf(ColorUtils.blendARGB(c.color, Color.WHITE, 0.55f).let { ColorUtils.setAlphaComponent(it, 150) },
+                    Color.TRANSPARENT)
+            }
+            h.art.setImageResource(c.art)
+            h.label.text = ""
             h.name.text = c.title
             h.count.text = "${c.games.size} jogos"
             h.card.setOnClickListener {
@@ -360,6 +380,7 @@ class ConsoleUi(private val context: Context, private val host: Host) {
     private val gameList = RecyclerView(context)
     private val tabRow = LinearLayout(context)
     private val badge = TextView(context)
+    private val badgeArt = ImageView(context)
     private val listTitle = TextView(context)
     private val cover = ImageView(context)
     private val preview = TextureView(context)
@@ -390,6 +411,7 @@ class ConsoleUi(private val context: Context, private val host: Host) {
             setPadding(dp(12), 0, 0, 0)
             maxLines = 1
         }
+        header.addView(badgeArt, LinearLayout.LayoutParams(dp(44), dp(44)).apply { rightMargin = dp(8) })
         header.addView(badge)
         header.addView(listTitle)
         tabRow.orientation = LinearLayout.HORIZONTAL
@@ -563,6 +585,7 @@ class ConsoleUi(private val context: Context, private val host: Host) {
         background.setTint(c.color)
         badge.text = c.label.let { if (it.length > 4) c.title.take(3) else it }
         badge.background = GradientDrawable().apply { cornerRadius = dp(10).toFloat(); setColor(c.color) }
+        badgeArt.setImageResource(c.art)
         listTitle.text = "${c.title} · ${c.games.size} jogos"
         // Tabs: all, favourites, recent, then the most common genres.
         val genres = c.games.mapNotNull { host.facts(it)?.genre?.substringBefore(" (")?.substringBefore(",")?.trim()?.ifEmpty { null } }
@@ -658,7 +681,8 @@ class ConsoleUi(private val context: Context, private val host: Host) {
         if (host.store.isFavorite(g)) addChip("★ Favorito")
         description.text = ""
         cover.setImageDrawable(null)
-        host.covers.load(g, cover) { }
+        // No cover: the console's drawing instead of an empty frame.
+        host.covers.load(g, cover) { found -> if (!found && cover.tag != null) cover.setImageResource(artFor(g.system.name)) }
         shots.removeAllViews()
         main.removeCallbacks(showRunnable)
         main.postDelayed(showRunnable, 250)
@@ -957,6 +981,23 @@ class ConsoleUi(private val context: Context, private val host: Host) {
     }
 
     companion object {
+        fun artFor(key: String) = when (key) {
+            "GB" -> R.drawable.art_gb
+            "GBA" -> R.drawable.art_gba
+            "NDS" -> R.drawable.art_nds
+            "N3DS" -> R.drawable.art_n3ds
+            "NES" -> R.drawable.art_nes
+            "SNES" -> R.drawable.art_snes
+            "MD" -> R.drawable.art_md
+            "SMS" -> R.drawable.art_sms
+            "GG" -> R.drawable.art_gg
+            "PS1" -> R.drawable.art_ps1
+            "recent" -> R.drawable.art_recent
+            "fav" -> R.drawable.art_fav
+            "all" -> R.drawable.art_all
+            else -> R.drawable.art_search
+        }
+
         private const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         private const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
         private val HINT_A = Color.rgb(239, 68, 68)
