@@ -12,4 +12,10 @@
     <color name="gb">#FF3FB68B</color>
     <color name="nds">#FF4A90E2</color>
     <color name="n3ds">#FFE5484D</color>
+    <color name="nes">#FFC62828</color>
+    <color name="snes">#FF9575CD</color>
+    <color name="md">#FFEF6C00</color>
+    <color name="sms">#FF00ACC1</color>
+    <color name="gg">#FF7CB342</color>
+    <color name="ps1">#FF78909C</color>
 </resources>

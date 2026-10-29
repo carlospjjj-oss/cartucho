@@ -254,9 +254,10 @@ class GameActivity : AppCompatActivity() {
             if (game.system == GameSystem.GBA || game.system == GameSystem.GB)
                 romCrc = java.util.zip.CRC32().apply { update(extracted.readBytes()) }.value
             extracted.path
-        } else if (game.system == GameSystem.N3DS) {
-            // The 3DS core opens the game itself, by path, and games are
-            // gigabytes: open it where it is (needs all-files access).
+        } else if (game.system.needsPath) {
+            // The 3DS and PlayStation cores open the game themselves, by
+            // path (gigabytes; .cue files naming their tracks): open it
+            // where it is (needs all-files access).
             Storage.directPath(this, game)
                 ?: return "Não foi possível abrir ${game.fileName} direto da pasta. " +
                     "Libere \"Acesso a todos os arquivos\" para o Cartucho e deixe o jogo na " +
@@ -340,6 +341,16 @@ class GameActivity : AppCompatActivity() {
             NativeBridge.setOption("melonds_screen_layout1", layout)
             if (onTv) NativeBridge.setOption("melonds_screen_gap", "0")
             return
+        }
+        when (game.system) {
+            GameSystem.NES, GameSystem.SNES -> return
+            GameSystem.MD, GameSystem.SMS, GameSystem.GG -> return
+            GameSystem.PS1 -> {
+                NativeBridge.setOption("pcsx_rearmed_drc", "enabled")
+                NativeBridge.setOption("pcsx_rearmed_show_bios_bootlogo", "disabled")
+                return
+            }
+            else -> {}
         }
         if (game.system != GameSystem.N3DS) {
             // Real BIOS when the player imported one, built-in otherwise.

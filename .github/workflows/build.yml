@@ -48,7 +48,10 @@ jobs:
         run: |
           mkdir -p app/src/main/assets/covers
           for repo in Nintendo_-_Game_Boy Nintendo_-_Game_Boy_Color Nintendo_-_Game_Boy_Advance \
-                      Nintendo_-_Nintendo_DS Nintendo_-_Nintendo_3DS; do
+                      Nintendo_-_Nintendo_DS Nintendo_-_Nintendo_3DS \
+                      Nintendo_-_Nintendo_Entertainment_System Nintendo_-_Super_Nintendo_Entertainment_System \
+                      Sega_-_Mega_Drive_-_Genesis Sega_-_Master_System_-_Mark_III Sega_-_Game_Gear \
+                      Sony_-_PlayStation; do
             git clone -q --depth 1 --filter=blob:none --no-checkout \
               "https://github.com/libretro-thumbnails/$repo.git" "thumbs-$repo"
             # -z: names exactly as stored (no quoting of accents or quotes).

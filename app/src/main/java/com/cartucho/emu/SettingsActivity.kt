@@ -142,6 +142,8 @@ class SettingsActivity : AppCompatActivity() {
             preferenceScreen.addPreference(Preference(requireContext()).apply {
                 title = "Cartucho ${BuildConfig.VERSION_NAME}"
                 summary = "Game Boy Advance e Game Boy: VBA-M. Nintendo DS: melonDS. Nintendo 3DS: Azahar. " +
+                    "NES: FCEUmm. Super Nintendo: Snes9x. Mega Drive, Master System e Game Gear: " +
+                    "Genesis Plus GX. PlayStation: PCSX ReARMed. " +
                     "Ambos são software livre (GPL)."
                 isSelectable = false
             })

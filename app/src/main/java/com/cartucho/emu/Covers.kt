@@ -192,6 +192,12 @@ class Covers(private val context: Context) {
             GameSystem.GB -> if (game.fileName.endsWith(".gbc", true)) 41 else 4
             GameSystem.NDS -> 8
             GameSystem.N3DS -> 4912
+            GameSystem.NES -> 7
+            GameSystem.SNES -> 6
+            GameSystem.MD -> 18
+            GameSystem.SMS -> 35
+            GameSystem.GG -> 20
+            GameSystem.PS1 -> 10
         }
         // Search with the plain title words; the match below is ours.
         val query = tokens(game.fileName).joinToString(" ").ifEmpty { return null }
@@ -259,6 +265,12 @@ class Covers(private val context: Context) {
             GameSystem.GB -> if (game.fileName.endsWith(".gbc", true)) 10 else 9
             GameSystem.NDS -> 15
             GameSystem.N3DS -> 17
+            GameSystem.NES -> 3
+            GameSystem.SNES -> 4
+            GameSystem.MD -> 1
+            GameSystem.SMS -> 2
+            GameSystem.GG -> 21
+            GameSystem.PS1 -> 57
         }
         synchronized(ssLock) {
             val params = linkedMapOf(
@@ -332,7 +344,7 @@ class Covers(private val context: Context) {
     /** CRC32 of small plain ROMs (GB/GBA), the most reliable way to identify them. */
     private fun crcOf(game: Game): Long? {
         if (game.entry != null || game.size !in 1..64L * 1024 * 1024) return null
-        if (game.system != GameSystem.GBA && game.system != GameSystem.GB) return null
+        if (game.system.needsPath || game.system == GameSystem.NDS) return null
         return try {
             context.contentResolver.openInputStream(Uri.parse(game.uri))?.use { input ->
                 val crc = java.util.zip.CRC32()
@@ -474,6 +486,12 @@ class Covers(private val context: Context) {
         else listOf("Nintendo_-_Game_Boy", "Nintendo_-_Game_Boy_Color")
         GameSystem.NDS -> listOf("Nintendo_-_Nintendo_DS")
         GameSystem.N3DS -> listOf("Nintendo_-_Nintendo_3DS")
+        GameSystem.NES -> listOf("Nintendo_-_Nintendo_Entertainment_System")
+        GameSystem.SNES -> listOf("Nintendo_-_Super_Nintendo_Entertainment_System")
+        GameSystem.MD -> listOf("Sega_-_Mega_Drive_-_Genesis")
+        GameSystem.SMS -> listOf("Sega_-_Master_System_-_Mark_III")
+        GameSystem.GG -> listOf("Sega_-_Game_Gear")
+        GameSystem.PS1 -> listOf("Sony_-_PlayStation")
     }
 
     private fun decode(file: File): Bitmap? {

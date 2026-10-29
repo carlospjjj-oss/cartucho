@@ -120,8 +120,8 @@ class LibraryActivity : AppCompatActivity() {
         findViewById<View>(R.id.empty_add).setOnClickListener { pickFolder.launch(null) }
         findViewById<View>(R.id.empty_open).setOnClickListener { pickFile.launch(arrayOf("*/*")) }
 
-        buildChips()
         games = store.loadGames()
+        buildChips()
         applyFilter()
         if (store.folders.isNotEmpty() || store.looseGames().isNotEmpty()) rescan()
         handlePlayIntent(intent)
@@ -167,12 +167,21 @@ class LibraryActivity : AppCompatActivity() {
         return (widthDp / 170).coerceIn(2, 8)
     }
 
+    private var chipSystems: Set<GameSystem>? = null
+
+    /** Filters: all / recent / favourites, then one per console that has games. */
     private fun buildChips() {
+        val present = games.map { it.system }.toSet()
+        if (present == chipSystems) return
+        chipSystems = present
+        chips.removeAllViews()
+        if (filter != FILTER_ALL && filter != FILTER_RECENT && filter != FILTER_FAV &&
+            present.none { it.name == filter }) filter = FILTER_ALL
         val options = listOf(
             FILTER_ALL to getString(R.string.filter_all),
             FILTER_RECENT to getString(R.string.filter_recent),
             FILTER_FAV to getString(R.string.filter_favorites),
-        ) + GameSystem.entries.map { it.name to it.shortName }
+        ) + GameSystem.entries.filter { it in present }.map { it.name to it.shortName }
         for ((key, label) in options) {
             val chip = Chip(this).apply {
                 text = label
@@ -232,6 +241,7 @@ class LibraryActivity : AppCompatActivity() {
             runOnUiThread {
                 games = found
                 progress.visibility = View.GONE
+                buildChips()
                 applyFilter()
                 refreshPlayInfo()
                 if (found.isNotEmpty())
@@ -283,7 +293,7 @@ class LibraryActivity : AppCompatActivity() {
             Snackbar.make(grid, R.string.cia_not_supported, Snackbar.LENGTH_LONG).show()
             return
         }
-        val system = GameSystem.forFileName(name)
+        val system = GameSystem.forFileName(name, size)
         if (system == null) {
             Snackbar.make(grid, R.string.unsupported_file, Snackbar.LENGTH_LONG).show()
             return
@@ -301,7 +311,7 @@ class LibraryActivity : AppCompatActivity() {
     }
 
     private fun launch(game: Game) {
-        if (game.system == GameSystem.N3DS && game.entry == null && Storage.directPath(this, game) == null) {
+        if (game.system.needsPath && game.entry == null && Storage.directPath(this, game) == null) {
             ask3dsFileAccess(game)
             return
         }
@@ -348,15 +358,15 @@ class LibraryActivity : AppCompatActivity() {
         if (Storage.realPath(game.uri) == null) {
             MaterialAlertDialogBuilder(this)
                 .setTitle(game.title)
-                .setMessage("Jogos de 3DS precisam estar na memória interna ou no cartão SD " +
+                .setMessage("Jogos de 3DS e PlayStation precisam estar na memória interna ou no cartão SD " +
                     "(não em Google Drive ou outros apps). Mova o jogo e adicione a pasta de novo.")
                 .setPositiveButton(R.string.ok, null)
                 .show()
             return
         }
         MaterialAlertDialogBuilder(this)
-            .setTitle("Permitir acesso aos jogos de 3DS")
-            .setMessage("Jogos de 3DS têm vários GB, então o Cartucho abre direto da pasta em " +
+            .setTitle("Permitir acesso aos jogos de ${game.system.fullName}")
+            .setMessage("Jogos de ${game.system.fullName} são grandes, então o Cartucho abre direto da pasta em " +
                 "vez de copiar. Para isso o Android pede a permissão \"Acesso a todos os " +
                 "arquivos\". Ative na próxima tela e volte para o app.")
             .setPositiveButton("Abrir configuração") { _, _ ->

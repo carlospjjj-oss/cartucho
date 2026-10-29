@@ -163,7 +163,7 @@ class LibraryStore(private val context: Context) {
                 tree.games += rel to Game(f.uri.toString(), innerName, sys, f.length(), inner.name, name)
                 continue
             }
-            val system = GameSystem.forFileName(name) ?: continue
+            val system = GameSystem.forFileName(name, f.length()) ?: continue
             // .bin/.elf etc. are ambiguous; skip tiny files that cannot be games.
             if (f.length() < 1024) continue
             tree.games += rel to Game(f.uri.toString(), name, system, f.length())

@@ -156,7 +156,8 @@ class ControllerOverlay(context: Context) : View(context) {
 
     private fun fitBesidePicture(list: List<Control>): List<Control> {
         val r = gameRect ?: return list
-        if (!landscape || width == 0 || system == GameSystem.N3DS || system == GameSystem.NDS) return list
+        val twoButtons = system in setOf(GameSystem.GB, GameSystem.GBA, GameSystem.NES, GameSystem.SMS, GameSystem.GG)
+        if (!landscape || width == 0 || !twoButtons) return list
         val areaW = (width - insetL - insetR).toFloat()
         val areaH = (height - insetT - insetB).toFloat()
         // Free column on each side of the picture, in pixels.
@@ -587,26 +588,90 @@ class ControllerOverlay(context: Context) : View(context) {
                 menu(0.93f, 0.025f),
                 ff(0.07f, 0.025f),
             )
+            GameSystem.SNES, GameSystem.PS1 -> {
+                val ps = system == GameSystem.PS1
+                // PlayStation: △ top, ○ right, ✕ bottom, □ left, like the pad.
+                val la = if (ps) "○" else "A"
+                val lb = if (ps) "✕" else "B"
+                val lx = if (ps) "△" else "X"
+                val ly = if (ps) "□" else "Y"
+                if (landscape) listOfNotNull(
+                    dpad(0.1f, 0.62f, 140f),
+                    b("a", la, Retro.A, 0.945f, 0.6f, 60f),
+                    b("b", lb, Retro.B, 0.88f, 0.75f, 60f),
+                    b("x", lx, Retro.X, 0.88f, 0.45f, 60f),
+                    b("y", ly, Retro.Y, 0.815f, 0.6f, 60f),
+                    pill("l", if (ps) "L1" else "L", Retro.L, 0.07f, 0.09f, 92f),
+                    pill("r", if (ps) "R1" else "R", Retro.R, 0.93f, 0.09f, 92f),
+                    if (ps) pill("zl", "L2", Retro.L2, 0.07f, 0.2f, 72f, 34f) else null,
+                    if (ps) pill("zr", "R2", Retro.R2, 0.93f, 0.2f, 72f, 34f) else null,
+                    pill("select", "SELECT", Retro.SELECT, 0.42f, 0.95f, 76f, 30f),
+                    pill("start", "START", Retro.START, 0.58f, 0.95f, 76f, 30f),
+                    menu(0.94f, if (ps) 0.33f else 0.25f),
+                    ff(0.06f, if (ps) 0.33f else 0.25f),
+                ) else listOfNotNull(
+                    pill("l", if (ps) "L1" else "L", Retro.L, 0.1f, 0.6f, 92f),
+                    pill("r", if (ps) "R1" else "R", Retro.R, 0.9f, 0.6f, 92f),
+                    if (ps) pill("zl", "L2", Retro.L2, 0.29f, 0.6f, 72f, 34f) else null,
+                    if (ps) pill("zr", "R2", Retro.R2, 0.71f, 0.6f, 72f, 34f) else null,
+                    dpad(0.22f, 0.77f, 150f),
+                    b("a", la, Retro.A, 0.9f, 0.77f, 64f),
+                    b("b", lb, Retro.B, 0.78f, 0.85f, 64f),
+                    b("x", lx, Retro.X, 0.78f, 0.69f, 64f),
+                    b("y", ly, Retro.Y, 0.66f, 0.77f, 64f),
+                    pill("select", "SELECT", Retro.SELECT, 0.38f, 0.94f, 84f, 34f),
+                    pill("start", "START", Retro.START, 0.62f, 0.94f, 84f, 34f),
+                    menu(0.93f, 0.025f),
+                    ff(0.07f, 0.025f),
+                )
+            }
+            GameSystem.MD -> {
+                // Mega Drive A B C, in a slanted row like the pad (RetroPad Y, B, A).
+                if (landscape) listOf(
+                    dpad(0.12f, 0.68f, 160f),
+                    b("y", "A", Retro.Y, 0.73f, 0.74f, 66f),
+                    b("b", "B", Retro.B, 0.835f, 0.67f, 66f),
+                    b("a", "C", Retro.A, 0.94f, 0.6f, 66f),
+                    pill("select", "MODE", Retro.SELECT, 0.42f, 0.94f, 80f, 32f),
+                    pill("start", "START", Retro.START, 0.58f, 0.94f, 80f, 32f),
+                    menu(0.5f, 0.06f),
+                    ff(0.42f, 0.06f),
+                ) else listOf(
+                    dpad(0.24f, 0.72f, 168f),
+                    b("y", "A", Retro.Y, 0.62f, 0.78f, 68f),
+                    b("b", "B", Retro.B, 0.76f, 0.72f, 68f),
+                    b("a", "C", Retro.A, 0.9f, 0.66f, 68f),
+                    pill("select", "MODE", Retro.SELECT, 0.38f, 0.92f, 84f, 34f),
+                    pill("start", "START", Retro.START, 0.62f, 0.92f, 84f, 34f),
+                    menu(0.93f, 0.025f),
+                    ff(0.07f, 0.025f),
+                )
+            }
             else -> {
+                // Game Boy, GBA, NES, Master System, Game Gear: D-pad and two buttons.
                 val shoulders = system == GameSystem.GBA
+                val sega = system == GameSystem.SMS || system == GameSystem.GG
+                val la = if (sega) "2" else "A"
+                val lb = if (sega) "1" else "B"
+                // Master System and Game Gear have START (pause) only.
                 if (landscape) listOfNotNull(
                     dpad(0.12f, 0.68f, 160f),
-                    b("b", "B", Retro.B, 0.8f, 0.76f, 72f),
-                    b("a", "A", Retro.A, 0.91f, 0.62f, 72f),
+                    b("b", lb, Retro.B, 0.8f, 0.76f, 72f),
+                    b("a", la, Retro.A, 0.91f, 0.62f, 72f),
                     if (shoulders) pill("l", "L", Retro.L, 0.08f, 0.12f, 104f, 46f) else null,
                     if (shoulders) pill("r", "R", Retro.R, 0.92f, 0.12f, 104f, 46f) else null,
-                    pill("select", "SELECT", Retro.SELECT, 0.42f, 0.94f, 80f, 32f),
-                    pill("start", "START", Retro.START, 0.58f, 0.94f, 80f, 32f),
+                    if (sega) null else pill("select", "SELECT", Retro.SELECT, 0.42f, 0.94f, 80f, 32f),
+                    pill("start", "START", Retro.START, if (sega) 0.5f else 0.58f, 0.94f, 80f, 32f),
                     menu(0.5f, 0.06f),
                     ff(0.42f, 0.06f),
                 ) else listOfNotNull(
                     if (shoulders) pill("l", "L", Retro.L, 0.13f, 0.5f, 104f, 46f) else null,
                     if (shoulders) pill("r", "R", Retro.R, 0.87f, 0.5f, 104f, 46f) else null,
                     dpad(0.24f, 0.7f, 172f),
-                    b("b", "B", Retro.B, 0.7f, 0.74f, 76f),
-                    b("a", "A", Retro.A, 0.86f, 0.66f, 76f),
-                    pill("select", "SELECT", Retro.SELECT, 0.38f, 0.9f, 84f, 34f),
-                    pill("start", "START", Retro.START, 0.62f, 0.9f, 84f, 34f),
+                    b("b", lb, Retro.B, 0.7f, 0.74f, 76f),
+                    b("a", la, Retro.A, 0.86f, 0.66f, 76f),
+                    if (sega) null else pill("select", "SELECT", Retro.SELECT, 0.38f, 0.9f, 84f, 34f),
+                    pill("start", "START", Retro.START, if (sega) 0.5f else 0.62f, 0.9f, 84f, 34f),
                     menu(0.93f, 0.025f),
                     ff(0.07f, 0.025f),
                 )

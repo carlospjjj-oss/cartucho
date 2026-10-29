@@ -56,7 +56,22 @@ class ButtonPainter(private val density: Float) {
         ControllerOverlay.Kind.QUICK_LOAD -> Color.rgb(171, 71, 188)
         ControllerOverlay.Kind.MENU -> slate
         ControllerOverlay.Kind.DPAD, ControllerOverlay.Kind.STICK -> slate
-        ControllerOverlay.Kind.BUTTON -> when (id) {
+        ControllerOverlay.Kind.BUTTON -> when {
+            system == GameSystem.PS1 && id in setOf("a", "b", "x", "y") -> when (id) {
+                "x" -> Color.rgb(38, 166, 154)   // triangle
+                "a" -> Color.rgb(239, 83, 80)    // circle
+                "b" -> Color.rgb(92, 107, 192)   // cross
+                else -> Color.rgb(236, 64, 122)  // square
+            }
+            system == GameSystem.MD && id in setOf("a", "b", "y") -> Color.rgb(63, 81, 181)
+            system == GameSystem.NES && id in setOf("a", "b") -> Color.rgb(211, 47, 47)
+            system == GameSystem.SMS && id in setOf("a", "b") -> Color.rgb(0, 137, 123)
+            system == GameSystem.GG && id in setOf("a", "b") -> Color.rgb(30, 136, 229)
+            else -> buttonColor(id)
+        }
+    }
+
+    private fun buttonColor(id: String): Int = when (id) {
             "a" -> when (system) {
                 GameSystem.GB -> Color.rgb(196, 30, 98)
                 GameSystem.GBA -> Color.rgb(124, 77, 255)
@@ -72,7 +87,6 @@ class ButtonPainter(private val density: Float) {
             "mic" -> Color.rgb(20, 184, 166)
             "l", "r", "zl", "zr" -> slate
             else -> dark  // start, select
-        }
     }
 
     // --- Helpers ----------------------------------------------------------------

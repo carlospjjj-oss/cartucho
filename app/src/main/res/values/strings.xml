@@ -3,7 +3,7 @@
     <string name="app_name">Cartucho</string>
     <string name="settings">Configurações</string>
     <string name="library_empty_title">Sua biblioteca está vazia</string>
-    <string name="library_empty_body">Escolha a pasta onde ficam seus jogos de GBA, Game Boy, DS ou 3DS. O Cartucho encontra os jogos sozinho e lembra da pasta.</string>
+    <string name="library_empty_body">Escolha a pasta onde ficam seus jogos (GBA, Game Boy, DS, 3DS, NES, Super Nintendo, Mega Drive, Master System, Game Gear ou PlayStation). O Cartucho encontra os jogos sozinho e lembra da pasta.</string>
     <string name="add_folder">Adicionar pasta</string>
     <string name="open_file">Abrir arquivo</string>
     <string name="filter_all">Todos</string>

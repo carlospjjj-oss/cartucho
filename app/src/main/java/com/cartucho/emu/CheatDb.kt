@@ -37,6 +37,12 @@ class CheatDb(private val context: Context) {
         GameSystem.GB -> listOf("Nintendo - Game Boy Color", "Nintendo - Game Boy")
         GameSystem.GBA -> listOf("Nintendo - Game Boy Advance")
         GameSystem.NDS -> listOf("Nintendo - Nintendo DS")
+        GameSystem.NES -> listOf("Nintendo - Nintendo Entertainment System")
+        GameSystem.SNES -> listOf("Nintendo - Super Nintendo Entertainment System")
+        GameSystem.MD -> listOf("Sega - Mega Drive - Genesis")
+        GameSystem.SMS -> listOf("Sega - Master System - Mark III")
+        GameSystem.GG -> listOf("Sega - Game Gear")
+        GameSystem.PS1 -> listOf("Sony - PlayStation")
         else -> emptyList()
     }
 

@@ -13,7 +13,9 @@ import java.io.File
 enum class Bios(val key: String, val title: String, val fileName: String, val size: Long) {
     GBA("bios_gba", "BIOS do Game Boy Advance", "gba_bios.bin", 16384),
     GB("bios_gb", "BIOS do Game Boy", "gb_bios.bin", 256),
-    GBC("bios_gbc", "BIOS do Game Boy Color", "gbc_bios.bin", 2304);
+    GBC("bios_gbc", "BIOS do Game Boy Color", "gbc_bios.bin", 2304),
+    // PCSX ReARMed looks for these names; SCPH-5501 (USA) is the usual one.
+    PS1("bios_ps1", "BIOS do PlayStation", "scph5501.bin", 524288);
 
     enum class Result { OK, WRONG_SIZE, ERROR }
 
@@ -53,7 +55,8 @@ enum class Bios(val key: String, val title: String, val fileName: String, val si
         fun anyFor(context: Context, system: GameSystem) = when (system) {
             GameSystem.GBA -> GBA.installed(context)
             GameSystem.GB -> GB.installed(context) || GBC.installed(context)
-            GameSystem.NDS, GameSystem.N3DS -> false
+            GameSystem.PS1 -> PS1.installed(context)
+            else -> false
         }
     }
 }

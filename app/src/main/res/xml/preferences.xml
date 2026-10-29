@@ -251,6 +251,7 @@
         <Preference app:key="bios_gba" app:title="BIOS do Game Boy Advance" />
         <Preference app:key="bios_gb" app:title="BIOS do Game Boy" />
         <Preference app:key="bios_gbc" app:title="BIOS do Game Boy Color" />
+        <Preference app:key="bios_ps1" app:title="BIOS do PlayStation (scph5501.bin)" />
     </PreferenceCategory>
 
     <PreferenceCategory app:title="Biblioteca">
