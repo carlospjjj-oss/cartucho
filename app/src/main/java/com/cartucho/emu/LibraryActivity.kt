@@ -44,6 +44,10 @@ class LibraryActivity : AppCompatActivity() {
     private lateinit var empty: View
     private lateinit var progress: LinearProgressIndicator
     private lateinit var chips: ChipGroup
+    // Kept: in the console look these grid views are not on screen, and
+    // findViewById would not find them.
+    private lateinit var fab: ExtendedFloatingActionButton
+    private lateinit var toolbarView: MaterialToolbar
 
     private val io = Executors.newSingleThreadExecutor()
     /** The console-style library (carousel and list), when that look is chosen. */
@@ -123,7 +127,9 @@ class LibraryActivity : AppCompatActivity() {
             }
         }
 
-        findViewById<ExtendedFloatingActionButton>(R.id.fab).setOnClickListener { addFolder() }
+        fab = findViewById(R.id.fab)
+        toolbarView = toolbar
+        fab.setOnClickListener { addFolder() }
         findViewById<View>(R.id.empty_add).setOnClickListener { addFolder() }
         findViewById<View>(R.id.empty_open).setOnClickListener { pickFile.launch(arrayOf("*/*")) }
 
@@ -316,7 +322,7 @@ class LibraryActivity : AppCompatActivity() {
         consoleUi?.refresh()
         val nothingAtAll = games.isEmpty() && progress.visibility != View.VISIBLE
         empty.visibility = if (nothingAtAll) View.VISIBLE else View.GONE
-        findViewById<View>(R.id.fab).visibility = if (nothingAtAll) View.GONE else View.VISIBLE
+        fab.visibility = if (nothingAtAll) View.GONE else View.VISIBLE
     }
 
     private fun refreshPlayInfo() {
@@ -360,7 +366,7 @@ class LibraryActivity : AppCompatActivity() {
     }
 
     private fun supportActionBarTitle(subtitle: String) {
-        findViewById<MaterialToolbar>(R.id.toolbar).subtitle = subtitle
+        toolbarView.subtitle = subtitle
     }
 
     private fun openSingleFile(uri: Uri) {
