@@ -127,6 +127,7 @@ object Tombstone {
         val thread = crashing.second
         sb.appendLine("Thread ${crashing.first} \"${str(thread.firstOrNull { it.number == 2 }?.bytes)}\":")
         var n = 0
+        val seen = HashSet<String>()
         for (frame in thread.filter { it.number == 4 }) {
             val f = fields(frame.bytes ?: continue) ?: continue
             val relPc = f.firstOrNull { it.number == 1 }?.varint ?: 0
@@ -136,7 +137,7 @@ object Tombstone {
             val build = str(f.firstOrNull { it.number == 8 }?.bytes)
             sb.append(String.format(Locale.US, "  #%02d pc %08x  %s", n, relPc, file))
             if (fn.isNotEmpty()) sb.append(" ($fn+$off)")
-            if (n == 0 && build.isNotEmpty()) sb.append(" [$build]")
+            if (build.isNotEmpty() && seen.add(file)) sb.append(" [$build]")
             sb.appendLine()
             if (++n >= 40) break
         }

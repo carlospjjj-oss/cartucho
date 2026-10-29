@@ -30,8 +30,10 @@ jobs:
       - uses: actions/cache@v4
         id: cache
         with:
-          path: out/libvbam_libretro.so
-          key: vbam-android-arm64-${{ env.VBAM_SHA }}-${{ hashFiles('.github/patches/vbam-cartucho.patch') }}
+          path: |
+            out/libvbam_libretro.so
+            symbols/libvbam_libretro.so
+          key: vbam-android-arm64-sym-${{ env.VBAM_SHA }}-${{ hashFiles('.github/patches/vbam-cartucho.patch') }}
       - name: Install NDK
         if: steps.cache.outputs.cache-hit != 'true'
         run: echo "y" | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" > /dev/null
