@@ -13,6 +13,7 @@
 #include <signal.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstring>
 #include <deque>
 
@@ -156,9 +157,12 @@ std::shared_ptr<Achievements> g_ra;
 std::mutex g_rec_mutex;
 std::shared_ptr<cartucho::Recorder> g_rec;
 
-std::shared_ptr<cartucho::Recorder> CurrentRecorder() {
+std::shared_ptr<cartucho::Recorder> g_preview;
+
+// which: 0 = the player's video, 1 = the library's moving preview.
+std::shared_ptr<cartucho::Recorder> CurrentRecorder(int which = 0) {
     std::lock_guard<std::mutex> lock(g_rec_mutex);
-    return g_rec;
+    return which == 1 ? g_preview : g_rec;
 }
 
 std::shared_ptr<Achievements> CurrentAchievements() {
@@ -431,16 +435,30 @@ JNI_FN(void, recStart)(JNIEnv*, jobject) {
     rec->Start(g_session->host().fps(), g_session->host().sample_rate());
 }
 
-// Any thread.
-JNI_FN(void, recStop)(JNIEnv*, jobject) {
-    if (auto rec = CurrentRecorder())
+// GL thread: keep the last seconds played for the library's moving preview.
+JNI_FN(void, previewStart)(JNIEnv*, jobject) {
+    if (!g_session)
+        return;
+    auto preview = std::make_shared<cartucho::Recorder>();
+    {
+        std::lock_guard<std::mutex> lock(g_rec_mutex);
+        g_preview = preview;
+    }
+    g_session->set_preview(preview);
+    // 6 seconds at 10 pictures per second, at most 320 pixels wide.
+    preview->StartRing(g_session->host().fps(), 60, std::max(1, static_cast<int>(g_session->host().fps() / 10 + 0.5)), 320);
+}
+
+// Any thread. which: 0 = the player's video, 1 = the preview (stops adding pictures).
+JNI_FN(void, recStop)(JNIEnv*, jobject, jint which) {
+    if (auto rec = CurrentRecorder(which))
         rec->Stop();
 }
 
 // {width, height} of the first recorded picture (0, 0 until there is one).
-JNI_FN(jintArray, recFirstSize)(JNIEnv* env, jobject) {
+JNI_FN(jintArray, recFirstSize)(JNIEnv* env, jobject, jint which) {
     int w = 0, h = 0;
-    if (auto rec = CurrentRecorder())
+    if (auto rec = CurrentRecorder(which))
         rec->FirstSize(&w, &h);
     jintArray out = env->NewIntArray(2);
     const jint v[2] = {w, h};
@@ -448,15 +466,15 @@ JNI_FN(jintArray, recFirstSize)(JNIEnv* env, jobject) {
     return out;
 }
 
-JNI_FN(jboolean, recHasVideo)(JNIEnv*, jobject) {
-    auto rec = CurrentRecorder();
+JNI_FN(jboolean, recHasVideo)(JNIEnv*, jobject, jint which) {
+    auto rec = CurrentRecorder(which);
     return rec && rec->HasVideo();
 }
 
 // Fills the encoder's YUV planes (direct buffers); returns the time in µs or -1.
-JNI_FN(jlong, recFillVideo)(JNIEnv* env, jobject, jobject y, jint y_stride, jobject u, jobject v,
+JNI_FN(jlong, recFillVideo)(JNIEnv* env, jobject, jint which, jobject y, jint y_stride, jobject u, jobject v,
                             jint uv_stride, jint uv_pixel_stride, jint width, jint height) {
-    auto rec = CurrentRecorder();
+    auto rec = CurrentRecorder(which);
     if (!rec)
         return -1;
     auto* py = static_cast<uint8_t*>(env->GetDirectBufferAddress(y));
@@ -520,6 +538,9 @@ JNI_FN(void, close)(JNIEnv*, jobject) {
         if (g_rec)
             g_rec->Stop();
         g_rec.reset();
+        if (g_preview)
+            g_preview->Stop();
+        g_preview.reset();
     }
     g_session.reset();
 }

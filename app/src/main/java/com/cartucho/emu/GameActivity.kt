@@ -73,6 +73,8 @@ class GameActivity : AppCompatActivity() {
     private var frameCounter = 0
     @Volatile private var achievementsOn = false
     @Volatile private var runAheadOk = false
+    @Volatile private var previewOn = false
+    private var previewWritten = false
     // Play time: counted while the game is on screen.
     private var playingSince = 0L
     private var messageUntil = 0L
@@ -522,6 +524,19 @@ class GameActivity : AppCompatActivity() {
             finish()
             return
         }
+        // The last seconds played become the library's moving preview.
+        if (previewOn && !previewWritten) {
+            previewWritten = true
+            NativeBridge.setPaused(true)
+            glView.queueEvent {
+                NativeBridge.recStop(1)
+                Thread {
+                    runCatching { PreviewClip.write(applicationContext, game) }
+                    runOnUiThread { quit() }
+                }.start()
+            }
+            return
+        }
         // A video being recorded is finished first (the process ends after).
         val rec = recorder
         if (rec != null && rec.running) {
@@ -573,6 +588,11 @@ class GameActivity : AppCompatActivity() {
                 loaded = true
                 // Still on the GL thread: the core is ready for its codes.
                 NativeBridge.setRewindEnabled(prefs.rewind)
+                // The library's moving preview: the last seconds played.
+                if (prefs.uiPreviews) {
+                    NativeBridge.previewStart()
+                    previewOn = true
+                }
                 runAheadOk = NativeBridge.runAheadPossible()
                 if (runAheadOk) NativeBridge.setRunAhead(prefs.runAhead)
                 if (game.system != GameSystem.N3DS) cheats.apply()

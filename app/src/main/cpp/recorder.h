@@ -22,6 +22,10 @@ public:
 
     // Emulation thread.
     void Start(double fps, double sample_rate);
+    // Keeps only the latest `max_pictures` pictures, one every `every`
+    // emulated frames, shrunk to at most `max_width` pixels wide (the
+    // library's moving preview). No audio.
+    void StartRing(double fps, size_t max_pictures, int every, unsigned max_width);
     void Stop();
     bool active() const { return active_; }
     // One emulated frame's picture (RGBA, top row first). `frames` is how many
@@ -53,6 +57,11 @@ private:
 
     std::mutex mutex_;
     bool active_ = false;
+    bool ring_ = false;
+    size_t ring_size_ = 0;
+    int every_ = 1;
+    unsigned max_width_ = 0;
+    std::vector<uint8_t> shrink_;
     double fps_ = 60.0;
     double in_rate_ = 48000.0;
     int64_t frames_ = 0;              // emulated frames so far

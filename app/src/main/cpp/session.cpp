@@ -214,16 +214,26 @@ void Session::set_recorder(std::shared_ptr<Recorder> rec) {
 }
 
 void Session::RecordPicture(int frames) {
-    if (!rec_ || !rec_->active())
+    const bool rec = rec_ && rec_->active();
+    const bool preview = preview_ && preview_->active();
+    if (!rec && !preview)
         return;
     const VideoFrame& f = host_->frame();
     if (f.width == 0 || f.height == 0)
         return;
+    const uint8_t* pixels = nullptr;
     if (!f.hw) {
-        rec_->PushVideo(f.rgba.data(), f.width, f.height, frames);
-    } else if (presenter_.ReadHwFrame(f.width, f.height, host_->hw_render().bottom_left_origin, &rec_hw_)) {
-        rec_->PushVideo(rec_hw_.data(), f.width, f.height, frames);
+        pixels = f.rgba.data();
+    } else if (rec || ++preview_hw_skip_ % 6 == 0) {  // hardware read-back is slow
+        if (presenter_.ReadHwFrame(f.width, f.height, host_->hw_render().bottom_left_origin, &rec_hw_))
+            pixels = rec_hw_.data();
     }
+    if (!pixels)
+        return;
+    if (rec)
+        rec_->PushVideo(pixels, f.width, f.height, frames);
+    if (preview)
+        preview_->PushVideo(pixels, f.width, f.height, frames);
 }
 
 void Session::OnSurfaceChanged(int width, int height) {

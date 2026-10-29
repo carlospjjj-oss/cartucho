@@ -46,6 +46,8 @@ class LibraryActivity : AppCompatActivity() {
     private lateinit var chips: ChipGroup
 
     private val io = Executors.newSingleThreadExecutor()
+    /** The console-style library (carousel and list), when that look is chosen. */
+    private var consoleUi: ConsoleUi? = null
     private var games: List<Game> = emptyList()
     private var filter: String = FILTER_ALL
     private var query: String = ""
@@ -84,6 +86,7 @@ class LibraryActivity : AppCompatActivity() {
                 R.id.action_open_file -> pickFile.launch(arrayOf("*/*"))
                 R.id.action_folders -> showFolders()
                 R.id.action_rescan -> rescan()
+                R.id.action_console_style -> setStyle("console")
                 R.id.action_report -> ErrorReport.show(this)
                 R.id.action_refresh_covers -> {
                     io.execute {
@@ -128,7 +131,90 @@ class LibraryActivity : AppCompatActivity() {
         buildChips()
         applyFilter()
         if (store.folders.isNotEmpty() || store.looseGames().isNotEmpty()) rescan()
+        if (Prefs(this).uiStyle == "console") startConsoleUi()
         handlePlayIntent(intent)
+    }
+
+    private fun startConsoleUi() {
+        val ui = ConsoleUi(this, object : ConsoleUi.Host {
+            override val covers get() = this@LibraryActivity.covers
+            override val info get() = this@LibraryActivity.info
+            override val store get() = this@LibraryActivity.store
+            override fun games() = games
+            override fun facts(game: Game) = facts[game.uri]
+            override fun playTime(game: Game) = playTimes[game.uri] ?: 0L
+            override fun launch(game: Game) = this@LibraryActivity.launch(game)
+            override fun gameMenu(game: Game) = showGameMenu(game)
+            override fun mainMenu() = consoleMenu()
+            override fun search(onQuery: (String) -> Unit) = askSearch(onQuery)
+        })
+        consoleUi = ui
+        setContentView(ui.root)
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (!ui.onBack()) {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        })
+        ui.refresh()
+    }
+
+    /** START / Menu in the console look. */
+    private fun consoleMenu() {
+        val items = listOf<Pair<String, () -> Unit>>(
+            "⚙️ Configurações" to { startActivity(Intent(this, SettingsActivity::class.java)) },
+            "📁 Adicionar pasta de jogos" to { addFolder() },
+            "🗂 Pastas" to { showFolders() },
+            "📄 Abrir um arquivo" to { pickFile.launch(arrayOf("*/*")) },
+            "🔄 Procurar jogos de novo" to { rescan() },
+            "🖼 Atualizar capas" to { io.execute { covers.refresh(); runOnUiThread { applyFilter() } } },
+            "▦ Biblioteca em grade de capas" to { setStyle("grid") },
+            "🩺 Relatório de erro" to { ErrorReport.show(this) },
+        )
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Cartucho")
+            .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
+            .show()
+    }
+
+    private fun setStyle(style: String) {
+        androidx.preference.PreferenceManager.getDefaultSharedPreferences(this).edit().putString("ui_style", style).apply()
+        recreate()
+    }
+
+    private fun askSearch(onQuery: (String) -> Unit) {
+        val input = android.widget.EditText(this).apply {
+            hint = getString(R.string.search_hint)
+            isSingleLine = true
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Buscar jogo")
+            .setView(android.widget.FrameLayout(this).apply { setPadding(48, 16, 48, 0); addView(input) })
+            .setPositiveButton("Buscar") { _, _ ->
+                input.text.toString().trim().takeIf { it.isNotEmpty() }?.let(onQuery)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+        input.requestFocus()
+    }
+
+    /** A short message: a snackbar in the grid, a toast in the console look. */
+    private fun notice(text: String) {
+        if (consoleUi == null) Snackbar.make(grid, text, Snackbar.LENGTH_LONG).show()
+        else android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_LONG).show()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        consoleUi?.pause()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        consoleUi?.release()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -143,7 +229,7 @@ class LibraryActivity : AppCompatActivity() {
         intent.action = null  // not again on rotation
         val game = (games + store.looseGames()).firstOrNull { it.uri == uri }
         if (game == null) {
-            Snackbar.make(grid, "Esse jogo não está mais na biblioteca.", Snackbar.LENGTH_LONG).show()
+            notice("Esse jogo não está mais na biblioteca.")
             return
         }
         launch(game)
@@ -153,10 +239,16 @@ class LibraryActivity : AppCompatActivity() {
         super.onResume()
         // Coming back from a game that closed by itself: offer the report.
         if (ErrorReport.hasNew(this)) {
-            Snackbar.make(grid, "O último jogo teve um problema.", Snackbar.LENGTH_LONG)
+            if (consoleUi == null) Snackbar.make(grid, "O último jogo teve um problema.", Snackbar.LENGTH_LONG)
                 .setAction("Ver relatório") { ErrorReport.show(this) }
                 .show()
+            else MaterialAlertDialogBuilder(this)
+                .setMessage("O último jogo teve um problema.")
+                .setPositiveButton("Ver relatório") { _, _ -> ErrorReport.show(this) }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
         }
+        consoleUi?.resume()
         // "Recentes" order, play times and the continue row change after playing.
         refreshPlayInfo()
         // Saves in the cloud: a fresh copy after playing.
@@ -213,6 +305,7 @@ class LibraryActivity : AppCompatActivity() {
         if (query.isNotEmpty()) list = list.filter { it.title.contains(query, ignoreCase = true) }
         adapter.submitList(list)
         updateContinueRow()
+        consoleUi?.refresh()
         val nothingAtAll = games.isEmpty() && progress.visibility != View.VISIBLE
         empty.visibility = if (nothingAtAll) View.VISIBLE else View.GONE
         findViewById<View>(R.id.fab).visibility = if (nothingAtAll) View.GONE else View.VISIBLE
@@ -280,7 +373,7 @@ class LibraryActivity : AppCompatActivity() {
                     val innerName = inner?.name?.substringAfterLast('/')
                     val sys = innerName?.let { GameSystem.forFileName(it) }
                     if (inner == null || sys == null) {
-                        Snackbar.make(grid, R.string.unsupported_file, Snackbar.LENGTH_LONG).show()
+                        notice(getString(R.string.unsupported_file))
                         return@runOnUiThread
                     }
                     runCatching {
@@ -298,12 +391,12 @@ class LibraryActivity : AppCompatActivity() {
             return
         }
         if (name.endsWith(".cia", ignoreCase = true)) {
-            Snackbar.make(grid, R.string.cia_not_supported, Snackbar.LENGTH_LONG).show()
+            notice(getString(R.string.cia_not_supported))
             return
         }
         val system = GameSystem.forFileName(name, size)
         if (system == null) {
-            Snackbar.make(grid, R.string.unsupported_file, Snackbar.LENGTH_LONG).show()
+            notice(getString(R.string.unsupported_file))
             return
         }
         runCatching {
@@ -349,7 +442,7 @@ class LibraryActivity : AppCompatActivity() {
 
     private fun pinShortcut(game: Game) {
         if (!ShortcutManagerCompat.isRequestPinShortcutSupported(this)) {
-            Snackbar.make(grid, "A tela inicial deste celular não aceita atalhos.", Snackbar.LENGTH_LONG).show()
+            notice("A tela inicial deste celular não aceita atalhos.")
             return
         }
         io.execute {
@@ -441,7 +534,7 @@ class LibraryActivity : AppCompatActivity() {
         io.execute {
             val ok = covers.setCustom(game, uri)
             runOnUiThread {
-                if (!ok) Snackbar.make(grid, "Não foi possível usar essa imagem.", Snackbar.LENGTH_LONG).show()
+                if (!ok) notice("Não foi possível usar essa imagem.")
                 adapter.notifyDataSetChanged()
             }
         }
@@ -683,6 +776,7 @@ class LibraryActivity : AppCompatActivity() {
      * as select / back.
      */
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        consoleUi?.let { if (it.onKey(event)) return true else return super.dispatchKeyEvent(event) }
         if (event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
             when (event.keyCode) {
                 android.view.KeyEvent.KEYCODE_BUTTON_Y, android.view.KeyEvent.KEYCODE_BUTTON_X,

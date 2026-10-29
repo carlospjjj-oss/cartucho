@@ -98,10 +98,13 @@ object NativeBridge {
 
     // Video recording (recorder.cpp). recStart on the GL thread.
     external fun recStart()
-    external fun recStop()
-    external fun recFirstSize(): IntArray
-    external fun recHasVideo(): Boolean
-    external fun recFillVideo(y: java.nio.ByteBuffer, yStride: Int, u: java.nio.ByteBuffer, v: java.nio.ByteBuffer,
+    /** which: 0 = the player's video, 1 = the library's moving preview. */
+    external fun recStop(which: Int)
+    external fun recFirstSize(which: Int): IntArray
+    external fun recHasVideo(which: Int): Boolean
+    /** GL thread: start keeping the last seconds played (the preview). */
+    external fun previewStart()
+    external fun recFillVideo(which: Int, y: java.nio.ByteBuffer, yStride: Int, u: java.nio.ByteBuffer, v: java.nio.ByteBuffer,
                               uvStride: Int, uvPixelStride: Int, width: Int, height: Int): Long
     external fun recAudioAvailable(): Int
     external fun recFillAudio(out: java.nio.ByteBuffer, maxFrames: Int, pts: LongArray): Int

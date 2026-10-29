@@ -20,6 +20,7 @@ inline uint8_t Clamp(int v) { return static_cast<uint8_t>(v < 0 ? 0 : v > 255 ? 
 void Recorder::Start(double fps, double sample_rate) {
     std::lock_guard<std::mutex> lock(mutex_);
     fps_ = fps > 1.0 ? fps : 60.0;
+    ring_ = false;
     in_rate_ = sample_rate > 1000.0 ? sample_rate : 48000.0;
     frames_ = 0;
     pictures_.clear();
@@ -33,6 +34,15 @@ void Recorder::Start(double fps, double sample_rate) {
     active_ = true;
 }
 
+void Recorder::StartRing(double fps, size_t max_pictures, int every, unsigned max_width) {
+    Start(fps, 48000.0);
+    std::lock_guard<std::mutex> lock(mutex_);
+    ring_ = true;
+    ring_size_ = max_pictures;
+    every_ = std::max(1, every);
+    max_width_ = max_width;
+}
+
 void Recorder::Stop() {
     std::lock_guard<std::mutex> lock(mutex_);
     active_ = false;
@@ -44,8 +54,45 @@ void Recorder::PushVideo(const uint8_t* rgba, unsigned width, unsigned height, i
     std::lock_guard<std::mutex> lock(mutex_);
     if (!active_)
         return;
+    const int64_t before = frames_;
     const int64_t pts = static_cast<int64_t>(frames_ * 1000000.0 / fps_);
     frames_ += frames;
+    if (ring_) {
+        // One picture every `every_` frames.
+        if (before / every_ == frames_ / every_ && before != 0)
+            return;
+        // Shrink big pictures by a whole factor (nearest neighbour).
+        if (max_width_ && width > max_width_) {
+            const unsigned f = (width + max_width_ - 1) / max_width_;
+            const unsigned w = width / f, h = height / f;
+            shrink_.resize(static_cast<size_t>(w) * h * 4);
+            for (unsigned y = 0; y < h; y++)
+                for (unsigned x = 0; x < w; x++)
+                    std::memcpy(&shrink_[(static_cast<size_t>(y) * w + x) * 4],
+                                rgba + (static_cast<size_t>(y * f) * width + x * f) * 4, 4);
+            rgba = shrink_.data();
+            width = w;
+            height = h;
+        }
+        if (!first_w_) {
+            first_w_ = static_cast<int>(width);
+            first_h_ = static_cast<int>(height);
+        }
+        Picture p;
+        if (pictures_.size() >= ring_size_) {
+            p = std::move(pictures_.front());  // drop the oldest, reuse its buffer
+            pictures_.pop_front();
+        } else if (!spare_.empty()) {
+            p = std::move(spare_.back());
+            spare_.pop_back();
+        }
+        p.rgba.assign(rgba, rgba + static_cast<size_t>(width) * height * 4);
+        p.width = width;
+        p.height = height;
+        p.pts_us = pts;
+        pictures_.push_back(std::move(p));
+        return;
+    }
     if (!first_w_) {
         first_w_ = static_cast<int>(width);
         first_h_ = static_cast<int>(height);

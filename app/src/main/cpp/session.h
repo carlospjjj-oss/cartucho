@@ -103,6 +103,8 @@ public:
     // Video recording: pictures (and, through the host, sound) go to `rec`
     // while it is active. GL thread.
     void set_recorder(std::shared_ptr<Recorder> rec);
+    // The library's moving preview: the last seconds played. GL thread.
+    void set_preview(std::shared_ptr<Recorder> preview) { preview_ = std::move(preview); }
 
     // Measured emulation speed (frames per second) over the last second.
     double measured_fps() const { return measured_fps_; }
@@ -111,7 +113,9 @@ private:
     std::unique_ptr<CoreHost> host_;
     std::shared_ptr<Achievements> ra_;
     std::shared_ptr<Recorder> rec_;
-    std::vector<uint8_t> rec_hw_;  // read-back of hardware frames for recording
+    std::shared_ptr<Recorder> preview_;
+    std::vector<uint8_t> rec_hw_;
+    unsigned preview_hw_skip_ = 0;  // read-back of hardware frames for recording
     void RecordPicture(int frames);
     GlPresenter presenter_;
     FramePacer pacer_;

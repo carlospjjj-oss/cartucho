@@ -148,6 +148,22 @@ class SettingsActivity : AppCompatActivity() {
                 .show()
         }
 
+        private val pickMusic = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri ?: return@registerForActivityResult
+            runCatching {
+                requireContext().contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            Prefs.raw(requireContext()).edit().putString("ui_music_uri", uri.toString()).apply()
+            refreshMusic()
+        }
+
+        private fun refreshMusic() {
+            val custom = Prefs.raw(requireContext()).getString("ui_music_uri", null)
+            findPreference<Preference>("ui_music_pick")?.summary =
+                if (custom == null) "Música do Cartucho — toque para escolher um arquivo seu"
+                else "Arquivo escolhido: ${Uri.decode(Uri.parse(custom).lastPathSegment ?: "").substringAfterLast('/')} — toque para trocar"
+        }
+
         private fun refreshRa() {
             val ctx = requireContext()
             findPreference<Preference>("ra_account")?.summary =
@@ -243,6 +259,20 @@ class SettingsActivity : AppCompatActivity() {
                 raAccount(); true
             }
             refreshRa()
+            refreshMusic()
+            findPreference<Preference>("ui_music_pick")?.setOnPreferenceClickListener {
+                val hasCustom = Prefs.raw(requireContext()).getString("ui_music_uri", null) != null
+                val items = mutableListOf("Escolher um arquivo de música")
+                if (hasCustom) items += "Voltar para a música do Cartucho"
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle("Música de fundo")
+                    .setItems(items.toTypedArray()) { _, which ->
+                        if (which == 0) pickMusic.launch(arrayOf("audio/*"))
+                        else { Prefs.raw(requireContext()).edit().remove("ui_music_uri").apply(); refreshMusic() }
+                    }
+                    .show()
+                true
+            }
             findPreference<Preference>("cloud_file")?.setOnPreferenceClickListener { cloudFile(); true }
             findPreference<Preference>("cloud_send")?.setOnPreferenceClickListener {
                 runBackup("Enviando para a nuvem…") { CloudSync.send(requireContext()) }

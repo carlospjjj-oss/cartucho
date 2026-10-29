@@ -111,4 +111,11 @@
     <string-array name="gb_palette_values">
         <item>black and white</item><item>original gameboy</item><item>gba sp</item><item>blue sea</item><item>dark knight</item><item>green forest</item><item>hot desert</item><item>pink dreams</item>
     </string-array>
+    <string-array name="ui_style_names">
+        <item>Console (carrossel e lista, como Batocera)</item>
+        <item>Grade de capas</item>
+    </string-array>
+    <string-array name="ui_style_values">
+        <item>console</item><item>grid</item>
+    </string-array>
 </resources>

@@ -43,7 +43,7 @@ class VideoRecorder(private val context: Context, private val title: String) {
 
     fun stop() {
         stopRequested = true
-        NativeBridge.recStop()
+        NativeBridge.recStop(0)
     }
 
     /** Waits for the file to be finished (at most [ms]). */
@@ -55,11 +55,11 @@ class VideoRecorder(private val context: Context, private val title: String) {
 
     private fun encode(): String {
         // Size of the game's picture, once the first one arrives.
-        var size = NativeBridge.recFirstSize()
+        var size = NativeBridge.recFirstSize(0)
         val waitUntil = System.currentTimeMillis() + 3000
         while (size[0] == 0 && !stopRequested && System.currentTimeMillis() < waitUntil) {
             Thread.sleep(20)
-            size = NativeBridge.recFirstSize()
+            size = NativeBridge.recFirstSize(0)
         }
         if (size[0] == 0) return "Nada para gravar"
         // Whole-number scale up to about 720 lines (crisp pixels), at most 4x.
@@ -144,12 +144,12 @@ class VideoRecorder(private val context: Context, private val title: String) {
             val stopping = stopRequested
             // Pictures. This thread is the only one taking them, so one seen
             // waiting is still there to fill.
-            if (!videoEosSent && (NativeBridge.recHasVideo() || stopping)) {
+            if (!videoEosSent && (NativeBridge.recHasVideo(0) || stopping)) {
                 val index = video.dequeueInputBuffer(2000)
                 if (index >= 0) {
-                    val t = if (NativeBridge.recHasVideo()) {
+                    val t = if (NativeBridge.recHasVideo(0)) {
                         val p = video.getInputImage(index)!!.planes
-                        NativeBridge.recFillVideo(p[0].buffer, p[0].rowStride, p[1].buffer, p[2].buffer,
+                        NativeBridge.recFillVideo(0, p[0].buffer, p[0].rowStride, p[1].buffer, p[2].buffer,
                             p[1].rowStride, p[1].pixelStride, width, height)
                     } else -1L
                     if (t >= 0) {
@@ -187,7 +187,7 @@ class VideoRecorder(private val context: Context, private val title: String) {
             }
             if (!videoEos) videoEos = drain(video, true)
             if (!audioEos) audioEos = drain(audio, false)
-            if (!stopping && !NativeBridge.recHasVideo() && NativeBridge.recAudioAvailable() < 1024) Thread.sleep(5)
+            if (!stopping && !NativeBridge.recHasVideo(0) && NativeBridge.recAudioAvailable() < 1024) Thread.sleep(5)
         }
 
         video.stop(); video.release()

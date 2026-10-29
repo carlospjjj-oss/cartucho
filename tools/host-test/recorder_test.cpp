@@ -82,6 +82,29 @@ int main() {
     rec.Stop();
     rec.PushVideo(pic.data(), 160, 144);
     CHECK(!rec.HasVideo(), "nothing recorded after stopping");
+
+    // Ring (the library's moving preview): last 6 s at 10 fps, shrunk.
+    Recorder ring;
+    ring.StartRing(60.0, 60, 6, 320);
+    std::vector<uint8_t> big(640 * 480 * 4, 200);
+    for (int f = 0; f < 1000; f++) ring.PushVideo(big.data(), 640, 480);
+    int rw = 0, rh = 0;
+    ring.FirstSize(&rw, &rh);
+    CHECK(rw == 320 && rh == 240, "preview pictures shrunk to %dx%d", rw, rh);
+    std::vector<uint8_t> ry(320 * 240), ruv(320 * 240 / 2);
+    int kept = 0;
+    int64_t first = -1, prev = -1;
+    bool spaced = true;
+    while (ring.HasVideo()) {
+        const int64_t t = ring.FillVideo(ry.data(), 320, ruv.data(), ruv.data() + 1, 320, 2, 320, 240);
+        if (first < 0) first = t;
+        if (prev >= 0 && std::llabs(t - prev - 100000) > 1) spaced = false;
+        prev = t;
+        kept++;
+    }
+    CHECK(kept == 60, "keeps the last 60 pictures (%d)", kept);
+    CHECK(spaced, "10 pictures per second");
+    CHECK(prev >= static_cast<int64_t>(990 * 1e6 / 60) - 1, "they are the latest ones (last at %lld us)", (long long)prev);
     std::printf(failures ? "%d FAILED\n" : "all passed\n", failures);
     return failures ? 1 : 0;
 }

@@ -2,6 +2,36 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
+    <PreferenceCategory app:title="Aparência da biblioteca">
+        <ListPreference
+            app:key="ui_style"
+            app:title="Estilo"
+            app:entries="@array/ui_style_names"
+            app:entryValues="@array/ui_style_values"
+            app:defaultValue="console"
+            app:useSimpleSummaryProvider="true" />
+        <SwitchPreferenceCompat
+            app:key="ui_sounds"
+            app:title="Sons de navegação"
+            app:defaultValue="true" />
+        <SwitchPreferenceCompat
+            app:key="ui_music"
+            app:title="Música de fundo"
+            app:defaultValue="true" />
+        <Preference
+            app:key="ui_music_pick"
+            app:title="Escolher a música" />
+        <SwitchPreferenceCompat
+            app:key="ui_previews"
+            app:title="Prévia do jogo em movimento"
+            app:summary="Guarda os últimos segundos jogados e mostra no painel do jogo"
+            app:defaultValue="true" />
+        <SwitchPreferenceCompat
+            app:key="ui_animated_bg"
+            app:title="Fundo animado"
+            app:defaultValue="true" />
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="Imagem">
         <ListPreference
             app:key="filter"

@@ -17,4 +17,6 @@
         app:showAsAction="never" />
     <item android:id="@+id/action_rescan" android:title="@string/rescan"
         app:showAsAction="never" />
+    <item android:id="@+id/action_console_style" android:title="Estilo console (carrossel)"
+        app:showAsAction="never" />
 </menu>

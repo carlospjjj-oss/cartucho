@@ -52,6 +52,12 @@ class Prefs(private val context: Context, private val game: Game? = null) {
     val ps1DualShock: Boolean get() = p.getBoolean("ps1_dualshock", true)
     /** PlayStation: an analog stick on the touch screen. */
     val ps1TouchStick: Boolean get() = p.getBoolean("ps1_touch_stick", false)
+    /** Library look: "console" (carousel and list, like a game console) or "grid" (covers). */
+    val uiStyle: String get() = p.getString("ui_style", "console")!!
+    val uiSounds: Boolean get() = p.getBoolean("ui_sounds", true)
+    val uiMusic: Boolean get() = p.getBoolean("ui_music", true)
+    val uiPreviews: Boolean get() = p.getBoolean("ui_previews", true)
+    val uiAnimatedBackground: Boolean get() = p.getBoolean("ui_animated_bg", true)
     val resume: Boolean get() = p.getBoolean("resume", true)
     val rewind: Boolean get() = p.getBoolean("rewind", true)
     val quickButtons: Boolean get() = p.getBoolean("quick_buttons", true)
