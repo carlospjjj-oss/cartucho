@@ -136,6 +136,8 @@ class ButtonPainter(private val density: Float) {
                     alpha(Color.WHITE, (0.95f * a).coerceAtLeast(0.6f)), shadow = true)
             }
             ButtonStyle.NEON -> {
+                // Grey controls (L, R, START...) would not glow: light them.
+                val color = if (color == slate || color == dark) Color.rgb(176, 186, 210) else color
                 fill.shader = null
                 fill.color = alpha(if (pressed) darker(color, 0.25f) else Color.rgb(12, 14, 22), (if (pressed) 0.85f else 0.55f) * a)
                 canvas.drawRoundRect(rect, radius, radius, fill)
