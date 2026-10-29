@@ -116,8 +116,8 @@ class LibraryActivity : AppCompatActivity() {
             }
         }
 
-        findViewById<ExtendedFloatingActionButton>(R.id.fab).setOnClickListener { pickFolder.launch(null) }
-        findViewById<View>(R.id.empty_add).setOnClickListener { pickFolder.launch(null) }
+        findViewById<ExtendedFloatingActionButton>(R.id.fab).setOnClickListener { addFolder() }
+        findViewById<View>(R.id.empty_add).setOnClickListener { addFolder() }
         findViewById<View>(R.id.empty_open).setOnClickListener { pickFile.launch(arrayOf("*/*")) }
 
         games = store.loadGames()
@@ -386,10 +386,25 @@ class LibraryActivity : AppCompatActivity() {
             .show()
     }
 
+    /** The system folder picker; some TVs do not have one. */
+    private fun addFolder() {
+        try {
+            pickFolder.launch(null)
+        } catch (e: android.content.ActivityNotFoundException) {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Sem seletor de pastas")
+                .setMessage("Este aparelho não tem o seletor de pastas do Android (comum em algumas TVs). " +
+                    "Instale um gerenciador de arquivos (por exemplo \"Files by Google\" ou \"X-plore\") e tente de novo, " +
+                    "ou use \"Abrir arquivo\" no menu para abrir um jogo por vez.")
+                .setPositiveButton(R.string.ok, null)
+                .show()
+        }
+    }
+
     private fun showFolders() {
         val folders = store.folders
         if (folders.isEmpty()) {
-            pickFolder.launch(null)
+            addFolder()
             return
         }
         val labels = folders.map { Uri.decode(it).substringAfterLast(':').ifEmpty { it } }.toTypedArray()
@@ -409,7 +424,7 @@ class LibraryActivity : AppCompatActivity() {
                     .setNegativeButton(android.R.string.cancel, null)
                     .show()
             }
-            .setPositiveButton(R.string.add_folder) { _, _ -> pickFolder.launch(null) }
+            .setPositiveButton(R.string.add_folder) { _, _ -> addFolder() }
             .show()
     }
 
@@ -494,6 +509,7 @@ class LibraryActivity : AppCompatActivity() {
             covers.load(game, cover) { found -> initials.visibility = if (found) View.INVISIBLE else View.VISIBLE }
             itemView.setOnClickListener { launch(game) }
             itemView.setOnLongClickListener { showGameMenu(game); true }
+            focusGrow(itemView)
         }
     }
 
@@ -576,7 +592,42 @@ class LibraryActivity : AppCompatActivity() {
             }
             itemView.setOnClickListener { launch(game) }
             itemView.setOnLongClickListener { showGameMenu(game); true }
+            focusGrow(itemView)
         }
+    }
+
+    /** TV remote / controller: the focused card grows a little (and gets its outline). */
+    private fun focusGrow(v: View) {
+        v.setOnFocusChangeListener { view, focused ->
+            view.animate().scaleX(if (focused) 1.06f else 1f).scaleY(if (focused) 1.06f else 1f)
+                .translationZ(if (focused) 8f else 0f).setDuration(120).start()
+        }
+    }
+
+    /**
+     * Controller in the library: Y or X opens the game's menu (like a long
+     * press), L1 / R1 move between the console filters. A and B already act
+     * as select / back.
+     */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            when (event.keyCode) {
+                android.view.KeyEvent.KEYCODE_BUTTON_Y, android.view.KeyEvent.KEYCODE_BUTTON_X,
+                android.view.KeyEvent.KEYCODE_MENU -> {
+                    currentFocus?.performLongClick()?.let { if (it) return true }
+                }
+                android.view.KeyEvent.KEYCODE_BUTTON_L1, android.view.KeyEvent.KEYCODE_BUTTON_R1 -> {
+                    val n = chips.childCount
+                    if (n > 0) {
+                        val at = (0 until n).indexOfFirst { (chips.getChildAt(it) as Chip).isChecked }.coerceAtLeast(0)
+                        val next = (at + if (event.keyCode == android.view.KeyEvent.KEYCODE_BUTTON_R1) 1 else n - 1) % n
+                        (chips.getChildAt(next) as Chip).performClick()
+                        return true
+                    }
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     companion object {

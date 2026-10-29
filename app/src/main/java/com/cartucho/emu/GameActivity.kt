@@ -103,6 +103,9 @@ class GameActivity : AppCompatActivity() {
             }
         }
         gamepad.stickAsDpad = game.system != GameSystem.N3DS
+        // TV (no touch screen): no on-screen buttons; the controller plays.
+        if (!packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TOUCHSCREEN))
+            overlay.visibility = View.INVISIBLE
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
