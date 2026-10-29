@@ -8,16 +8,25 @@ namespace cartucho {
 
 namespace {
 
-bool Compress(const std::vector<uint8_t>& in, std::vector<uint8_t>* out) {
+// Compresses into `buffer` (reused, sized for the worst case) and hands back
+// an exact-size copy: a delta of a mostly still picture packs to ~1 KB, and
+// keeping the worst-case allocation behind each one would hold the whole
+// state size per entry (the cause of running out of memory on the phone).
+bool Compress(const std::vector<uint8_t>& in, std::vector<uint8_t>* buffer, std::vector<uint8_t>* out) {
     uLongf len = compressBound(static_cast<uLong>(in.size()));
-    out->resize(len + 4);
+    buffer->resize(len + 4);
     // Size prefix so decompression knows how much to expect.
     const uint32_t n = static_cast<uint32_t>(in.size());
-    std::memcpy(out->data(), &n, 4);
-    if (compress2(out->data() + 4, &len, in.data(), static_cast<uLong>(in.size()), 1) != Z_OK)
+    std::memcpy(buffer->data(), &n, 4);
+    if (compress2(buffer->data() + 4, &len, in.data(), static_cast<uLong>(in.size()), 1) != Z_OK)
         return false;
-    out->resize(len + 4);
+    out->assign(buffer->begin(), buffer->begin() + len + 4);
     return true;
+}
+
+// Memory one kept delta really costs: its allocation plus bookkeeping.
+size_t Cost(const std::vector<uint8_t>& delta) {
+    return delta.capacity() + 64;
 }
 
 bool Decompress(const std::vector<uint8_t>& in, std::vector<uint8_t>* out) {
@@ -65,19 +74,19 @@ void Rewind::Worker() {
             scratch_.resize(state.size());
             for (size_t i = 0; i < state.size(); i++)
                 scratch_[i] = state[i] ^ latest_[i];
-            have_delta = Compress(scratch_, &packed);
+            have_delta = Compress(scratch_, &compress_buffer_, &packed);
         }
         lock.lock();
         if (have_delta) {
-            bytes_ += packed.size();
+            bytes_ += Cost(packed);
             deltas_.push_back(std::move(packed));
         } else {
             deltas_.clear();
             bytes_ = 0;
         }
         latest_.swap(state);
-        while (bytes_ + latest_.size() > budget_ && !deltas_.empty()) {
-            bytes_ -= deltas_.front().size();
+        while ((bytes_ + latest_.size() > budget_ || deltas_.size() > kMaxEntries) && !deltas_.empty()) {
+            bytes_ -= Cost(deltas_.front());
             deltas_.pop_front();
         }
         busy_ = false;
@@ -131,7 +140,7 @@ bool Rewind::Pop(std::vector<uint8_t>* state) {
         bytes_ = 0;
         return false;
     }
-    bytes_ -= deltas_.back().size();
+    bytes_ -= Cost(deltas_.back());
     deltas_.pop_back();
     for (size_t i = 0; i < latest_.size(); i++)
         latest_[i] ^= scratch_[i];

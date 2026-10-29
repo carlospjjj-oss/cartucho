@@ -51,6 +51,9 @@ private:
     std::vector<uint8_t> latest_;            // newest full state
     std::deque<std::vector<uint8_t>> deltas_;  // compressed latest[i] ^ latest[i-1]
     std::vector<uint8_t> scratch_;
+    std::vector<uint8_t> compress_buffer_;     // worker only
+    // Enough for minutes of rewinding; bounds the bookkeeping too.
+    static constexpr size_t kMaxEntries = 20000;
     // Last: the thread starts once every other member exists.
     std::thread worker_;
 };

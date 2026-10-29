@@ -3,6 +3,7 @@
 // cheat code through the core's cheat API.
 //   rewind_test <core.so> <rom>
 #include <cstdio>
+#include <malloc.h>
 #include <map>
 #include <vector>
 
@@ -68,6 +69,24 @@ int main(int argc, char** argv) {
     const bool bounded = rewind.bytes() < (48u << 20);
     std::printf("%s  memory within budget (%zu KB)\n", bounded ? "ok  " : "FAIL", rewind.bytes() / 1024);
     failures += !bounded;
+
+    // A game that hardly changes (a still menu): thousands of tiny deltas must
+    // cost real memory within the budget, not the full state each.
+    {
+        const size_t heap0 = mallinfo2().uordblks;
+        Rewind still(8u << 20);
+        std::vector<uint8_t> s(113 * 1024, 0x55);
+        for (int i = 0; i < 4000; i++) {
+            s[i % s.size()] ^= 1;
+            still.Push(s);
+            still.entries();
+        }
+        const size_t used = mallinfo2().uordblks - heap0;
+        const bool real = used < (12u << 20);
+        std::printf("%s  still picture: %zu states use %zu KB of heap (budget 8 MB)\n", real ? "ok  " : "FAIL",
+                    still.entries(), used / 1024);
+        failures += !real;
+    }
 
     // Cheats: a GameShark code must be accepted without trouble.
     host.CheatReset();
