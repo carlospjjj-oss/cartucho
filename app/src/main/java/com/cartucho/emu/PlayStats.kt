@@ -62,7 +62,10 @@ object PlayStats {
     }
 
     /** Saves the picture shown when leaving: ARGB pixels as from NativeBridge.screenshot(). */
-    fun saveThumb(context: Context, game: Game, data: IntArray?) {
+    fun saveThumb(context: Context, game: Game, data: IntArray?) = savePicture(resumeThumb(context, game), data)
+
+    /** Writes a small PNG of a picture from NativeBridge.screenshot() (save state slots too). */
+    fun savePicture(f: File, data: IntArray?) {
         if (data == null || data.size < 2) return
         val w = data[0]
         val h = data[1]
@@ -73,7 +76,6 @@ object PlayStats {
             // big ones (DS, upscaled) are shrunk to keep the file light.
             val scale = minOf(1f, 480f / maxOf(w, h))
             val out = if (scale < 1f) Bitmap.createScaledBitmap(bmp, (w * scale).toInt(), (h * scale).toInt(), true) else bmp
-            val f = resumeThumb(context, game)
             val tmp = File(f.path + ".tmp")
             tmp.outputStream().use { out.compress(Bitmap.CompressFormat.PNG, 100, it) }
             tmp.renameTo(f)

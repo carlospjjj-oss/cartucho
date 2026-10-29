@@ -199,11 +199,16 @@ class ControllerOverlay(context: Context) : View(context) {
 
     // --- Layout persistence -----------------------------------------------
 
-    private fun layoutKey() = "layout_${system.name}_${if (landscape) "land" else "port"}"
+    /** A game with its own layout: its name (the console's layout is the starting point). */
+    var layoutScope: String? = null
+
+    private fun systemLayoutKey() = "layout_${system.name}_${if (landscape) "land" else "port"}"
+    private fun layoutKey() = layoutScope?.let { "${systemLayoutKey()}_game_$it" } ?: systemLayoutKey()
 
     private fun loadLayout() {
         customLayout = false
-        val json = Prefs.raw(context).getString(layoutKey(), null) ?: return
+        val raw = Prefs.raw(context)
+        val json = raw.getString(layoutKey(), null) ?: raw.getString(systemLayoutKey(), null) ?: return
         customLayout = true
         runCatching {
             val o = JSONObject(json)

@@ -5,20 +5,26 @@ import android.content.SharedPreferences
 import androidx.preference.PreferenceManager
 
 /** Typed access to the user's settings (res/xml/preferences.xml). */
-class Prefs(context: Context) {
+class Prefs(private val context: Context, private val game: Game? = null) {
     private val p: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
+    // This game's own settings (PerGame), read again on each access so
+    // changes apply right away.
+    private fun own(key: String): String? =
+        game?.let { PerGame.load(context, it).optString(key).ifEmpty { null } }
 
-    val filter: Int get() = p.getString("filter", "2")!!.toIntOrNull() ?: 2
+    private fun str(key: String, default: String): String = own(key) ?: p.getString(key, default)!!
+
+    val filter: Int get() = str("filter", "2").toIntOrNull() ?: 2
     val integerScale: Boolean get() = p.getBoolean("integer_scale", false)
     val showFps: Boolean get() = p.getBoolean("show_fps", false)
 
-    val buttonStyle: ButtonStyle get() = ButtonStyle.of(p.getString("button_style", "modern"))
+    val buttonStyle: ButtonStyle get() = ButtonStyle.of(str("button_style", "modern"))
     val overlayOpacity: Float get() = p.getInt("overlay_opacity", 60) / 100f
     val overlayScale: Float get() = p.getInt("overlay_scale", 100) / 100f
     val haptics: Boolean get() = p.getBoolean("haptics", true)
     val hideWithGamepad: Boolean get() = p.getBoolean("hide_with_gamepad", true)
 
-    val fastForwardSpeed: Float get() = p.getString("ff_speed", "3")!!.toFloatOrNull() ?: 3f
+    val fastForwardSpeed: Float get() = str("ff_speed", "3").toFloatOrNull() ?: 3f
 
     val n3dsResolution: String get() = p.getString("n3ds_resolution", "1")!!
     val n3dsNew3ds: Boolean get() = p.getBoolean("n3ds_new3ds", true)
@@ -34,10 +40,14 @@ class Prefs(context: Context) {
     val vibration: Boolean get() = p.getBoolean("vibration", true)
     val microphone: Boolean get() = p.getBoolean("microphone", true)
     val tvMode: Boolean get() = p.getBoolean("tv_mode", true)
-    val runAhead: Int get() = p.getString("run_ahead", "0")!!.toIntOrNull() ?: 0
-    val lcdColor: String get() = p.getString("lcd_color", "off")!!
-    val gbPalette: String get() = p.getString("gb_palette", "original gameboy")!!
-    val frameBlend: String get() = p.getString("frame_blend", "disabled")!!
+    val runAhead: Int get() = str("run_ahead", "0").toIntOrNull() ?: 0
+    val lcdColor: String get() = str("lcd_color", "off")
+    val gbPalette: String get() = str("gb_palette", "original gameboy")
+    val frameBlend: String get() = str("frame_blend", "disabled")
+    /** This game keeps its own on-screen button layout. */
+    val ownLayout: Boolean get() = game?.let { PerGame.load(context, it).optBoolean("own_layout") } ?: false
+    /** The app-wide value of a setting, for showing what "default" means. */
+    fun appValue(key: String, default: String): String = p.getString(key, default)!!
     /** PlayStation: DualShock (analog sticks) instead of the plain pad. */
     val ps1DualShock: Boolean get() = p.getBoolean("ps1_dualshock", true)
     /** PlayStation: an analog stick on the touch screen. */
@@ -58,7 +68,11 @@ class Prefs(context: Context) {
 
     val downloadCovers: Boolean get() = p.getBoolean("download_covers", true)
 
-    fun setFilter(value: Int) = p.edit().putString("filter", value.toString()).apply()
+    fun setFilter(value: Int) {
+        // A game with its own filter keeps changing its own.
+        if (game != null && own("filter") != null) PerGame.set(context, game, "filter", value.toString())
+        else p.edit().putString("filter", value.toString()).apply()
+    }
     fun setN3dsLayout(value: String) = p.edit().putString("n3ds_layout", value).apply()
     fun setN3dsSwap(value: Boolean) = p.edit().putBoolean("n3ds_swap", value).apply()
 

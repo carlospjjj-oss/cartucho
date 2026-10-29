@@ -72,6 +72,7 @@ class GameActivity : AppCompatActivity() {
     private var overlayStickY = 0f
     private var frameCounter = 0
     @Volatile private var achievementsOn = false
+    @Volatile private var runAheadOk = false
     // Play time: counted while the game is on screen.
     private var playingSince = 0L
     private var messageUntil = 0L
@@ -79,13 +80,14 @@ class GameActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ErrorReport.install(this)
-        prefs = Prefs(this)
+        prefs = Prefs(this)  // replaced once the game is known (per-game settings)
         game = Game(
             intent.getStringExtra(EXTRA_URI)!!,
             intent.getStringExtra(EXTRA_FILE)!!,
             GameSystem.fromName(intent.getStringExtra(EXTRA_SYSTEM))!!,
             intent.getLongExtra(EXTRA_SIZE, 0L),
         )
+        prefs = Prefs(this, game)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         hideSystemBars()
@@ -422,6 +424,7 @@ class GameActivity : AppCompatActivity() {
         overlay.haptics = prefs.haptics
         overlay.quickButtons = prefs.quickButtons
         overlay.micButton = prefs.microphone
+        overlay.layoutScope = if (prefs.ownLayout) game.saveName else null
         overlay.analogStick = game.system == GameSystem.PS1 && prefs.ps1DualShock && prefs.ps1TouchStick
         overlay.configure(game.system, landscape)
     }
@@ -567,7 +570,8 @@ class GameActivity : AppCompatActivity() {
                 loaded = true
                 // Still on the GL thread: the core is ready for its codes.
                 NativeBridge.setRewindEnabled(prefs.rewind)
-                if (NativeBridge.runAheadPossible()) NativeBridge.setRunAhead(prefs.runAhead)
+                runAheadOk = NativeBridge.runAheadPossible()
+                if (runAheadOk) NativeBridge.setRunAhead(prefs.runAhead)
                 if (game.system != GameSystem.N3DS) cheats.apply()
                 // RetroAchievements, when signed in.
                 val raConsole = RetroAchievements.consoleId(game)
@@ -709,10 +713,67 @@ class GameActivity : AppCompatActivity() {
         val path = stateFile(0).path
         glView.queueEvent {
             val error = if (save) NativeBridge.saveState(path) else NativeBridge.loadState(path)
+            if (save && error == null) PlayStats.savePicture(File("$path.png"), NativeBridge.screenshot())
             runOnUiThread {
                 showMessage(error ?: if (save) "Salvo rápido" else "Carregado o salvo rápido")
             }
         }
+    }
+
+    /** Settings that only this game uses; each falls back to the app's. */
+    private fun gameSettings() {
+        val own = PerGame.load(this, game)
+        val relevant = PerGame.items.filter { item ->
+            when (item.key) {
+                "lcd_color", "frame_blend" -> game.system == GameSystem.GB || game.system == GameSystem.GBA
+                "gb_palette" -> game.system == GameSystem.GB
+                "run_ahead" -> runAheadOk
+                else -> true
+            }
+        }
+        fun label(item: PerGame.Item, value: String): String {
+            val names = resources.getStringArray(item.names)
+            val values = resources.getStringArray(item.values)
+            return names.getOrNull(values.indexOf(value)) ?: value
+        }
+        val rows = relevant.map { item ->
+            val v = own.optString(item.key)
+            "${item.title}: " + if (v.isEmpty()) "padrão do app" else label(item, v)
+        } + ("Botões na tela: " + (if (own.optBoolean("own_layout")) "layout só deste jogo" else "layout do console"))
+        subDialog(MaterialAlertDialogBuilder(this)
+            .setTitle("Configurações deste jogo")
+            .setItems(rows.toTypedArray()) { _, which ->
+                if (which == relevant.size) {
+                    PerGame.set(this, game, "own_layout", if (own.optBoolean("own_layout")) null else true)
+                    applyOverlaySettings()
+                    showMessage(if (prefs.ownLayout) "Layout próprio: use Menu → Editar controles" else "Layout do console")
+                    gameSettings()
+                    return@setItems
+                }
+                val item = relevant[which]
+                val names = arrayOf("Padrão do app") + resources.getStringArray(item.names)
+                val values = resources.getStringArray(item.values)
+                val current = values.indexOf(own.optString(item.key)) + 1
+                subDialog(MaterialAlertDialogBuilder(this)
+                    .setTitle(item.title)
+                    .setSingleChoiceItems(names, current) { d, choice ->
+                        d.dismiss()
+                        PerGame.set(this, game, item.key, if (choice == 0) null else values[choice - 1])
+                        applyGameSettings()
+                        gameSettings()
+                    })
+            }
+            .setPositiveButton(R.string.ok, null))
+    }
+
+    /** Puts changed settings into effect while playing. */
+    private fun applyGameSettings() {
+        applyDisplay()
+        applyCoreOptions()
+        overlay.style = prefs.buttonStyle
+        if (fastForward) NativeBridge.setSpeed(prefs.fastForwardSpeed)
+        val ahead = prefs.runAhead
+        if (runAheadOk) glView.queueEvent { NativeBridge.setRunAhead(ahead) }
     }
 
     /** Multi-disc games (.m3u, .pbp with several discs). */
@@ -861,6 +922,7 @@ class GameActivity : AppCompatActivity() {
         if (achievementsOn) items += "🏆 Conquistas" to { showAchievements() }
         items += (if (recorder?.running == true) "⏹ Parar gravação" else "🎬 Gravar vídeo") to { toggleRecording() }
         items += "Captura de tela" to { takeScreenshot() }
+        items += "⚙️ Configurações deste jogo" to { gameSettings() }
         items += getString(R.string.menu_edit_controls) to { startEditing() }
         items += (if (overlay.visibility == View.VISIBLE) getString(R.string.menu_hide_controls)
                   else getString(R.string.menu_show_controls)) to {
@@ -901,20 +963,52 @@ class GameActivity : AppCompatActivity() {
 
     private fun stateFile(slot: Int) = File(stateDir, "${game.saveName}.state$slot")
 
+    /** The six slots, each with the picture of its moment. */
     private fun pickSlot(save: Boolean) {
         val fmt = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
-        val labels = (1..6).map { slot ->
+        data class Slot(val n: Int, val label: String, val picture: android.graphics.Bitmap?)
+        val slots = (1..6).map { slot ->
             val f = stateFile(slot)
-            if (f.exists()) getString(R.string.slot_used, slot, fmt.format(Date(f.lastModified())))
-            else getString(R.string.slot_empty, slot)
-        }.toTypedArray()
+            if (f.exists()) Slot(slot, getString(R.string.slot_used, slot, fmt.format(Date(f.lastModified()))),
+                android.graphics.BitmapFactory.decodeFile(f.path + ".png"))
+            else Slot(slot, getString(R.string.slot_empty, slot), null)
+        }
+        val adapter = object : android.widget.BaseAdapter() {
+            override fun getCount() = slots.size
+            override fun getItem(position: Int) = slots[position]
+            override fun getItemId(position: Int) = position.toLong()
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+                val s = slots[position]
+                val row = LinearLayout(this@GameActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(20), dp(6), dp(20), dp(6))
+                }
+                val image = android.widget.ImageView(this@GameActivity).apply {
+                    scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                    setBackgroundColor(0xFF07060C.toInt())
+                    if (s.picture != null) setImageDrawable(android.graphics.drawable.BitmapDrawable(resources, s.picture)
+                        .apply { isFilterBitmap = s.picture.width > 300 })
+                }
+                row.addView(image, LinearLayout.LayoutParams(dp(96), dp(72)))
+                row.addView(TextView(this@GameActivity).apply {
+                    text = s.label
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                    setPadding(dp(14), 0, 0, 0)
+                    setTextColor(androidx.core.content.ContextCompat.getColor(this@GameActivity, R.color.on_surface))
+                })
+                return row
+            }
+        }
         subDialog(MaterialAlertDialogBuilder(this)
             .setTitle(if (save) R.string.menu_save_state else R.string.menu_load_state)
-            .setItems(labels) { _, which ->
+            .setAdapter(adapter) { _, which ->
                 val slot = which + 1
                 val path = stateFile(slot).path
+                if (!save && !File(path).exists()) return@setAdapter
                 glView.queueEvent {
                     val error = if (save) NativeBridge.saveState(path) else NativeBridge.loadState(path)
+                    if (save && error == null) PlayStats.savePicture(File("$path.png"), NativeBridge.screenshot())
                     runOnUiThread {
                         showMessage(error ?: getString(if (save) R.string.state_saved else R.string.state_loaded, slot))
                     }
