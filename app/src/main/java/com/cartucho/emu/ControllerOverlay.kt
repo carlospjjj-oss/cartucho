@@ -83,14 +83,14 @@ class ControllerOverlay(context: Context) : View(context) {
     private var controls: List<Control> = emptyList()
 
     private val density = resources.displayMetrics.density
-    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val painter = ButtonPainter(resources.displayMetrics.density)
+    /** Look of the buttons (Settings → Visual dos botões). */
+    var style: ButtonStyle
+        get() = painter.style
+        set(value) { painter.style = value; invalidate() }
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 2f * resources.displayMetrics.density
-    }
-    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textAlign = Paint.Align.CENTER
-        isFakeBoldText = true
     }
     private val rect = RectF()
 
@@ -298,64 +298,35 @@ class ControllerOverlay(context: Context) : View(context) {
     }
 
     private fun drawControl(canvas: Canvas, c: Control) {
-        val a = (opacity * 255).toInt().coerceIn(20, 255)
         val isPressed = pressed(c)
         val isSelected = editMode && c === selected
-        fill.color = if (isPressed) Color.argb((a * 0.85f).toInt(), 107, 78, 255)
-                     else Color.argb((a * 0.35f).toInt(), 255, 255, 255)
-        stroke.color = if (isSelected) Color.argb(255, 255, 181, 71) else Color.argb((a * 0.9f).toInt(), 255, 255, 255)
-        text.color = Color.argb(a.coerceAtLeast(120), 255, 255, 255)
         val x = cx(c)
         val y = cy(c)
         val hw = halfW(c)
         val hh = halfH(c)
+        painter.system = system
         when (c.kind) {
-            Kind.DPAD -> drawDpad(canvas, x, y, hw, a)
-            Kind.STICK -> {
-                fill.color = Color.argb((a * 0.25f).toInt(), 255, 255, 255)
-                canvas.drawCircle(x, y, hw, fill)
-                canvas.drawCircle(x, y, hw, stroke)
-                fill.color = if (isPressed) Color.argb((a * 0.9f).toInt(), 107, 78, 255)
-                             else Color.argb((a * 0.6f).toInt(), 255, 255, 255)
-                canvas.drawCircle(x + stickX * hw * 0.55f, y + stickY * hw * 0.55f, hw * 0.45f, fill)
-            }
+            Kind.DPAD -> painter.drawDpad(canvas, x, y, hw, dpadMask, opacity)
+            Kind.STICK -> painter.drawStick(canvas, x, y, hw, stickX, stickY, isPressed, opacity)
             else -> {
-                if (c.round) {
-                    canvas.drawCircle(x, y, hw, fill)
-                    canvas.drawCircle(x, y, hw, stroke)
-                } else {
-                    rect.set(x - hw, y - hh, x + hw, y + hh)
-                    canvas.drawRoundRect(rect, hh, hh, fill)
-                    canvas.drawRoundRect(rect, hh, hh, stroke)
+                val icon = when (c.kind) {
+                    Kind.MENU -> ButtonPainter.Icon.MENU
+                    Kind.FAST_FORWARD -> ButtonPainter.Icon.FAST_FORWARD
+                    Kind.REWIND -> ButtonPainter.Icon.REWIND
+                    Kind.QUICK_SAVE -> ButtonPainter.Icon.SAVE
+                    Kind.QUICK_LOAD -> ButtonPainter.Icon.LOAD
+                    else -> if (c.id == "mic") ButtonPainter.Icon.MIC else null
                 }
-                text.textSize = min(hw, hh) * if (c.label.length > 2) 0.62f else 0.9f
-                canvas.drawText(c.label, x, y - (text.descent() + text.ascent()) / 2f, text)
+                painter.drawButton(canvas, x, y, hw, hh, c.round, painter.colorOf(c.id, c.kind), c.label, icon,
+                    pressed = isPressed && c.kind != Kind.FAST_FORWARD,
+                    active = c.kind == Kind.FAST_FORWARD && fastForwardOn, opacity = opacity)
             }
         }
         if (isSelected) {
+            stroke.color = Color.argb(255, 255, 181, 71)
             rect.set(x - hw - 6 * density, y - hh - 6 * density, x + hw + 6 * density, y + hh + 6 * density)
             canvas.drawRoundRect(rect, 12 * density, 12 * density, stroke)
         }
-    }
-
-    private fun drawDpad(canvas: Canvas, x: Float, y: Float, half: Float, a: Int) {
-        val arm = half * 0.36f
-        val arms = listOf(
-            Retro.UP to RectF(x - arm, y - half, x + arm, y - arm),
-            Retro.DOWN to RectF(x - arm, y + arm, x + arm, y + half),
-            Retro.LEFT to RectF(x - half, y - arm, x - arm, y + arm),
-            Retro.RIGHT to RectF(x + arm, y - arm, x + half, y + arm),
-        )
-        fill.color = Color.argb((a * 0.35f).toInt(), 255, 255, 255)
-        canvas.drawRect(x - arm, y - arm, x + arm, y + arm, fill)
-        for ((bit, r) in arms) {
-            fill.color = if ((dpadMask and (1 shl bit)) != 0) Color.argb((a * 0.85f).toInt(), 107, 78, 255)
-                         else Color.argb((a * 0.35f).toInt(), 255, 255, 255)
-            canvas.drawRoundRect(r, arm * 0.35f, arm * 0.35f, fill)
-        }
-        // Outline of the cross.
-        canvas.drawRoundRect(RectF(x - arm, y - half, x + arm, y + half), arm * 0.35f, arm * 0.35f, stroke)
-        canvas.drawRoundRect(RectF(x - half, y - arm, x + half, y + arm), arm * 0.35f, arm * 0.35f, stroke)
     }
 
     // --- Touch ----------------------------------------------------------------

@@ -12,6 +12,7 @@ class Prefs(context: Context) {
     val integerScale: Boolean get() = p.getBoolean("integer_scale", false)
     val showFps: Boolean get() = p.getBoolean("show_fps", false)
 
+    val buttonStyle: ButtonStyle get() = ButtonStyle.of(p.getString("button_style", "modern"))
     val overlayOpacity: Float get() = p.getInt("overlay_opacity", 60) / 100f
     val overlayScale: Float get() = p.getInt("overlay_scale", 100) / 100f
     val haptics: Boolean get() = p.getBoolean("haptics", true)

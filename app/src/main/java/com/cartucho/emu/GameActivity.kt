@@ -369,6 +369,7 @@ class GameActivity : AppCompatActivity() {
 
     private fun applyOverlaySettings() {
         overlay.opacity = prefs.overlayOpacity
+        overlay.style = prefs.buttonStyle
         overlay.globalScale = prefs.overlayScale
         overlay.haptics = prefs.haptics
         overlay.quickButtons = prefs.quickButtons
