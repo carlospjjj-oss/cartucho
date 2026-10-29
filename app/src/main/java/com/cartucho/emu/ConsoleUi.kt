@@ -397,7 +397,9 @@ class ConsoleUi(private val context: Context, private val host: Host) {
         val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(20), dp(12), dp(20), 0)
+            // Room on the right for the clock and battery.
+            // (portrait: below them; landscape: beside them).
+            if (landscape) setPadding(dp(20), dp(12), dp(220), 0) else setPadding(dp(20), dp(40), dp(20), 0)
         }
         badge.apply {
             setTextColor(Color.WHITE)
@@ -410,6 +412,7 @@ class ConsoleUi(private val context: Context, private val host: Host) {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
             setPadding(dp(12), 0, 0, 0)
             maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
         }
         header.addView(badgeArt, LinearLayout.LayoutParams(dp(44), dp(44)).apply { rightMargin = dp(8) })
         header.addView(badge)
@@ -900,7 +903,7 @@ class ConsoleUi(private val context: Context, private val host: Host) {
             val item = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(8), dp(6), dp(12), dp(6))
+                setPadding(dp(if (landscape) 8 else 4), dp(6), dp(if (landscape) 12 else 6), dp(6))
                 isClickable = true
                 background = ContextCompat.getDrawable(context, android.R.drawable.list_selector_background)
                 setOnClickListener { h.action() }
@@ -921,8 +924,9 @@ class ConsoleUi(private val context: Context, private val host: Host) {
             item.addView(TextView(context).apply {
                 text = h.label
                 setTextColor(Color.argb(230, 207, 203, 227))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                setPadding(dp(8), 0, 0, 0)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, if (landscape) 14f else 13f)
+                setPadding(dp(if (landscape) 8 else 6), 0, 0, 0)
+                maxLines = 1
             })
             hints.addView(item)
         }
@@ -963,11 +967,17 @@ class ConsoleUi(private val context: Context, private val host: Host) {
         hints.apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(20), 0, dp(20), 0)
+            setPadding(dp(if (landscape) 20 else 8), 0, dp(if (landscape) 20 else 8), 0)
+        }
+        // Scrolls sideways when the hints do not fit (narrow phones in portrait).
+        val hintScroll = HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            isFillViewport = true
             background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
                 intArrayOf(Color.argb(170, 0, 0, 0), Color.TRANSPARENT))
+            addView(hints, FrameLayout.LayoutParams(WRAP, MATCH))
         }
-        root.addView(hints, FrameLayout.LayoutParams(MATCH, dp(56), Gravity.BOTTOM))
+        root.addView(hintScroll, FrameLayout.LayoutParams(MATCH, dp(56), Gravity.BOTTOM))
         root.addView(statusBar(), FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.END).apply {
             topMargin = dp(14); rightMargin = dp(20)
         })
