@@ -20,7 +20,9 @@ módulos (cores no formato libretro):
 | PlayStation | [PCSX ReARMed](https://github.com/libretro/pcsx_rearmed) | GPL-2.0 |
 
 Conquistas: [rcheevos](https://github.com/RetroAchievements/rcheevos) (MIT),
-em `app/src/main/cpp/third_party/rcheevos`.
+em `app/src/main/cpp/third_party/rcheevos`, com
+[libchdr](https://github.com/rtissera/libchdr) (BSD) para reconhecer discos `.chd`.
+Dados dos jogos: [libretro-database](https://github.com/libretro/libretro-database).
 
 Os emuladores são compilados direto do código oficial pelo workflow **Build
 cores** (`.github/workflows/cores.yml`, versões fixadas nas variáveis `*_SHA`),
@@ -63,6 +65,11 @@ arquivos".
   jogo de cada jogo.
 - Atalho de um jogo na tela inicial do Android. Segurar o ícone do app mostra
   os últimos jogos.
+- **Detalhes do jogo:** ano, gênero, desenvolvedora, distribuidora e número de
+  jogadores (base da libretro), e descrição (ScreenScraper, em português, ou
+  TheGamesDB).
+- **Android TV / Google TV:** aparece na tela inicial da TV e dá para navegar
+  pela biblioteca com o controle remoto ou com um controle de videogame.
 - De onde vêm as capas, em ordem de preferência:
   1. A capa que você escolheu.
   2. As que o Skraper/EmulationStation deixaram na pasta dos jogos (`media/...`, `gamelist.xml`).
@@ -74,8 +81,10 @@ arquivos".
 **Jogando**
 - **Continuar de onde parou:** ao sair, o jogo é salvo no ponto exato e
   continua dali (menos 3DS).
-- 6 slots de save state por jogo, mais salvar/carregar rápido na tela; saves
-  de bateria automáticos.
+- 6 slots de save state por jogo, cada um com a imagem do momento, mais
+  salvar/carregar rápido na tela; saves de bateria automáticos.
+- **Configurações por jogo:** filtro, cores, run-ahead, velocidade, visual e
+  layout dos botões só daquele jogo.
 - Voltar no tempo (segure «) e acelerar (2x a 6x).
 - Run-ahead (1 ou 2 quadros) para menos atraso nos botões. O app confere
   sozinho se o jogo aceita e desliga quando não aceita.
@@ -103,11 +112,15 @@ arquivos".
   botão do controle pode acelerar, voltar no tempo, salvar/carregar rápido ou
   abrir o menu.
 - Sensor de movimento, vibração e microfone (DS: botão MIC).
+- Mega Drive com controle de 6 botões (X Y Z); PlayStation com DualShock
+  (analógicos no controle e, se quiser, na tela) e troca de disco (.m3u).
 
 **Conexões**
 - **Link cable pela rede** (GBA e Game Boy): as partidas no mesmo Wi-Fi
   aparecem sozinhas. Funciona com cabo de GBA (2 a 4 jogadores) e com o
   adaptador sem fio (Union Room de Pokémon). Conecta também com o VBA-M de PC.
+  **Pela internet** também: com o app Tailscale (ou ZeroTier/Radmin) nos dois
+  aparelhos, ou com a porta 5738 aberta no roteador de quem hospeda.
 - **Modo TV:** com o celular ligado a uma TV (HDMI, Chromecast/Smart View), o
   jogo vai para a TV e o celular vira o controle.
 - ☁️ **Saves na nuvem:** um arquivo no Google Drive/OneDrive/Dropbox,
@@ -121,8 +134,7 @@ arquivos".
   Configurações → BIOS dá para importar as do seu próprio console (GBA, GB,
   GBC, PlayStation).
 - Instalar arquivos `.cia` no 3DS.
-- Conquistas no 3DS. No PlayStation, as conquistas só reconhecem jogos
-  `.cue`/`.bin`, não `.chd`.
+- Conquistas no 3DS.
 
 ## Jogos e arquivos de sistema
 
