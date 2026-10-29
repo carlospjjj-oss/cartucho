@@ -52,6 +52,9 @@ class LibraryActivity : AppCompatActivity() {
     private val continueRow = ContinueRowAdapter()
     // Play time per game uri, read in the background (small files).
     private var playTimes: Map<String, Long> = emptyMap()
+    private lateinit var info: GameInfo
+    // Year and genre per game uri, from the packed database.
+    private var facts: Map<String, GameInfo.Facts> = emptyMap()
 
     private val pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri ?: return@registerForActivityResult
@@ -71,6 +74,7 @@ class LibraryActivity : AppCompatActivity() {
         setContentView(R.layout.activity_library)
         store = LibraryStore(this)
         covers = Covers(this)
+        info = GameInfo(this)
 
         val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
         toolbar.inflateMenu(R.menu.library)
@@ -218,8 +222,10 @@ class LibraryActivity : AppCompatActivity() {
         val all = games
         io.execute {
             val times = all.associate { it.uri to PlayStats.playTime(this, it) }.filterValues { it > 0 }
+            val known = all.mapNotNull { g -> info.quickFacts(g)?.let { g.uri to it } }.toMap()
             runOnUiThread {
                 playTimes = times
+                facts = known
                 applyFilter()
                 adapter.notifyDataSetChanged()
             }
@@ -444,6 +450,7 @@ class LibraryActivity : AppCompatActivity() {
     private fun showGameMenu(game: Game) {
         val fav = store.isFavorite(game)
         val actions = mutableListOf<Pair<String, () -> Unit>>(
+            "ℹ️ Detalhes do jogo" to { showDetails(game) },
             getString(if (fav) R.string.unfavorite else R.string.favorite) to {
                 store.setFavorite(game, !fav)
                 applyFilter()
@@ -468,6 +475,66 @@ class LibraryActivity : AppCompatActivity() {
             .setTitle(game.title + if (time > 0) "  ·  ${PlayStats.formatTime(time)}" else "")
             .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second() }
             .show()
+    }
+
+    /** Cover, facts and description of one game. */
+    private fun showDetails(game: Game) {
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val cover = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            adjustViewBounds = true
+        }
+        val factsView = TextView(this).apply {
+            setTextColor(ContextCompat.getColor(this@LibraryActivity, R.color.on_surface))
+            textSize = 15f
+            setPadding(0, pad / 2, 0, 0)
+            text = game.system.fullName
+        }
+        val description = TextView(this).apply {
+            setTextColor(ContextCompat.getColor(this@LibraryActivity, R.color.on_surface_dim))
+            textSize = 14f
+            setPadding(0, pad / 2, 0, 0)
+        }
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+            addView(cover, android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT, (180 * resources.displayMetrics.density).toInt()))
+            addView(factsView)
+            addView(description)
+        }
+        covers.load(game, cover) { found -> cover.visibility = if (found) View.VISIBLE else View.GONE }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(game.title)
+            .setView(android.widget.ScrollView(this).apply { addView(box) })
+            .setPositiveButton("Jogar") { _, _ -> launch(game) }
+            .setNegativeButton("Fechar", null)
+            .show()
+        io.execute {
+            val f = info.facts(game)
+            val time = PlayStats.playTime(this, game)
+            val lines = mutableListOf(game.system.fullName + (game.tags.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""))
+            if (f != null) {
+                if (f.year.isNotEmpty()) lines += "Ano: ${f.year}"
+                if (f.genre.isNotEmpty()) lines += "Gênero: ${f.genre}"
+                if (f.developer.isNotEmpty()) lines += "Desenvolvedora: ${f.developer}"
+                if (f.publisher.isNotEmpty() && f.publisher != f.developer) lines += "Distribuidora: ${f.publisher}"
+                if (f.players.isNotEmpty()) lines += if (f.players == "1") "1 jogador" else "Até ${f.players} jogadores"
+            }
+            if (time > 0) lines += "Tempo jogado: ${PlayStats.formatTime(time)}"
+            val kept = info.keptDescription(game)
+            runOnUiThread {
+                factsView.text = lines.joinToString("\n")
+                description.text = kept ?: "Buscando descrição…"
+            }
+            if (kept == null) {
+                val text = info.fetchDescription(game, covers)
+                runOnUiThread {
+                    description.text = text ?: "Sem descrição. Configure o ScreenScraper (descrições em português) " +
+                        "ou o TheGamesDB nas Configurações para ver o resumo dos jogos."
+                }
+            }
+        }
     }
 
     private inner class GameAdapter : ListAdapter<Game, GameHolder>(DIFF) {
@@ -504,8 +571,14 @@ class LibraryActivity : AppCompatActivity() {
             fav.visibility = if (store.isFavorite(game)) View.VISIBLE else View.GONE
             title.text = game.title
             val time = playTimes[game.uri]
-            subtitle.text = if (time != null) "${game.system.shortName} · ${PlayStats.formatTime(time)} jogados"
-                            else listOf(game.system.fullName, game.tags).filter { it.isNotEmpty() }.joinToString(" · ")
+            val f = facts[game.uri]
+            subtitle.text = when {
+                time != null -> listOfNotNull(game.system.shortName, f?.year?.ifEmpty { null },
+                    "${PlayStats.formatTime(time)} jogados").joinToString(" · ")
+                f != null -> listOfNotNull(game.system.shortName, f.year.ifEmpty { null },
+                    f.genre.substringBefore(" (").ifEmpty { null }).joinToString(" · ")
+                else -> listOf(game.system.fullName, game.tags).filter { it.isNotEmpty() }.joinToString(" · ")
+            }
             covers.load(game, cover) { found -> initials.visibility = if (found) View.INVISIBLE else View.VISIBLE }
             itemView.setOnClickListener { launch(game) }
             itemView.setOnLongClickListener { showGameMenu(game); true }

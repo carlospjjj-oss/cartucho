@@ -74,6 +74,14 @@ jobs:
               | sed -n 's|^cht/[^/]*/\(.*\)\.cht$|\1|p' > "app/src/main/assets/cheats/$dir.txt"
             echo "$dir: $(wc -l < "app/src/main/assets/cheats/$dir.txt") cheat files"
           done
+      - name: Game facts
+        # Year, genre, developer, publisher and players from the libretro
+        # database's metadat/, packed small (tools/metadata/pack.py).
+        run: |
+          for f in releaseyear genre developer publisher maxusers; do
+            git -C lrdb checkout -q HEAD -- "metadat/$f" || true
+          done
+          python3 tools/metadata/pack.py lrdb app/src/main/assets/meta
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

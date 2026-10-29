@@ -323,6 +323,89 @@ class Covers(private val context: Context) {
         }
     }
 
+    /**
+     * A description of the game in Portuguese (or English): ScreenScraper
+     * first (has Portuguese texts), then TheGamesDB (English). Null when
+     * neither is set up or knows the game. Off the main thread.
+     */
+    fun describe(game: Game): String? {
+        if ((prefs.ssUser.isNotEmpty() || prefs.ssDevId.isNotEmpty()) && System.currentTimeMillis() >= ssPausedUntil) {
+            synchronized(ssLock) {
+                runCatching {
+                    val params = linkedMapOf(
+                        "devid" to prefs.ssDevId, "devpassword" to prefs.ssDevPassword,
+                        "softname" to "Cartucho", "output" to "json",
+                        "ssid" to prefs.ssUser, "sspassword" to prefs.ssPassword,
+                        "systemeid" to ssSystem(game).toString(), "romtype" to "rom",
+                        "romnom" to (if (game.archive.isNotEmpty()) game.archive else game.fileName),
+                        "romtaille" to game.size.toString(),
+                    )
+                    crcOf(game)?.let { params["crc"] = String.format("%08X", it) }
+                    val conn = URL("https://api.screenscraper.fr/api2/jeuInfos.php?" +
+                        params.entries.joinToString("&") { it.key + "=" + enc(it.value) }).openConnection() as HttpURLConnection
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 30000
+                    conn.setRequestProperty("User-Agent", "Cartucho")
+                    val body = try { conn.inputStream.bufferedReader().use { it.readText() } } finally { conn.disconnect() }
+                    val synopsis = JSONObject(body).optJSONObject("response")?.optJSONObject("jeu")?.optJSONArray("synopsis")
+                    if (synopsis != null) {
+                        val texts = (0 until synopsis.length()).mapNotNull { synopsis.optJSONObject(it) }
+                            .associate { it.optString("langue") to it.optString("text") }
+                        (texts["pt"] ?: texts["br"] ?: texts["en"] ?: texts.values.firstOrNull())
+                            ?.takeIf { it.isNotBlank() }?.let { return it.trim() }
+                    }
+                }
+            }
+        }
+        val key = prefs.tgdbKey
+        if (key.isNotEmpty() && System.currentTimeMillis() >= tgdbPausedUntil) {
+            synchronized(tgdbLock) {
+                runCatching {
+                    val query = tokens(game.fileName).joinToString(" ")
+                    val conn = URL("https://api.thegamesdb.net/v1.1/Games/ByGameName?apikey=${enc(key)}" +
+                        "&name=${enc(query)}&filter%5Bplatform%5D=${tgdbPlatform(game)}&fields=overview")
+                        .openConnection() as HttpURLConnection
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 30000
+                    conn.setRequestProperty("User-Agent", "Cartucho")
+                    val body = try { conn.inputStream.bufferedReader().use { it.readText() } } finally { conn.disconnect() }
+                    val games = JSONObject(body).optJSONObject("data")?.optJSONArray("games") ?: return null
+                    val byTitle = (0 until games.length()).mapNotNull { games.optJSONObject(it) }
+                        .associateBy { it.optString("game_title") }
+                    val title = bestMatch(game.fileName, byTitle.keys.toList()) ?: return null
+                    return byTitle[title]?.optString("overview")?.takeIf { it.isNotBlank() }?.trim()
+                }
+            }
+        }
+        return null
+    }
+
+    private fun ssSystem(game: Game) = when (game.system) {
+        GameSystem.GBA -> 12
+        GameSystem.GB -> if (game.fileName.endsWith(".gbc", true)) 10 else 9
+        GameSystem.NDS -> 15
+        GameSystem.N3DS -> 17
+        GameSystem.NES -> 3
+        GameSystem.SNES -> 4
+        GameSystem.MD -> 1
+        GameSystem.SMS -> 2
+        GameSystem.GG -> 21
+        GameSystem.PS1 -> 57
+    }
+
+    private fun tgdbPlatform(game: Game) = when (game.system) {
+        GameSystem.GBA -> 5
+        GameSystem.GB -> if (game.fileName.endsWith(".gbc", true)) 41 else 4
+        GameSystem.NDS -> 8
+        GameSystem.N3DS -> 4912
+        GameSystem.NES -> 7
+        GameSystem.SNES -> 6
+        GameSystem.MD -> 18
+        GameSystem.SMS -> 35
+        GameSystem.GG -> 20
+        GameSystem.PS1 -> 10
+    }
+
     /** The front box art, in the most fitting region available. */
     private fun pickBox(json: JSONObject): String? {
         val medias = json.optJSONObject("response")?.optJSONObject("jeu")?.optJSONArray("medias") ?: return null
