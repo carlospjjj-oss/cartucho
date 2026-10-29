@@ -111,7 +111,11 @@ class GameActivity : AppCompatActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (overlay.editMode) finishEditing() else showMenu()
+                when {
+                    quickMenu.visible -> quickMenu.close()
+                    overlay.editMode -> finishEditing()
+                    else -> showMenu()
+                }
             }
         })
 
@@ -213,6 +217,7 @@ class GameActivity : AppCompatActivity() {
             visibility = View.GONE
         }
         root.addView(tvLabel, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER))
+        quickMenu = QuickMenu(this) { menuClosed() }
         recLabel = TextView(this).apply {
             text = "●  REC"
             setTextColor(0xFFFF3B30.toInt())
@@ -255,6 +260,7 @@ class GameActivity : AppCompatActivity() {
             })
         }
         root.addView(editPanel, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER))
+        root.addView(quickMenu.root, FrameLayout.LayoutParams(MATCH, MATCH))
 
         setContentView(root)
         applyOverlaySettings()
@@ -677,6 +683,7 @@ class GameActivity : AppCompatActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (::quickMenu.isInitialized && quickMenu.visible) return quickMenu.onKey(event)
         if (modalCount == 0 && !overlay.editMode && gamepad.onKey(event)) return true
         return super.dispatchKeyEvent(event)
     }
@@ -924,41 +931,77 @@ class GameActivity : AppCompatActivity() {
 
     // --- Menu ---------------------------------------------------------------------
 
-    private fun showMenu() {
-        if (modalCount > 0 || !loaded) return
-        val items = mutableListOf(
-            getString(R.string.menu_resume) to { },
-            getString(R.string.menu_save_state) to { pickSlot(save = true) },
-            getString(R.string.menu_load_state) to { pickSlot(save = false) },
-            (if (fastForward) getString(R.string.speed_normal)
-             else getString(R.string.speed_x, prefs.fastForwardSpeed.toInt())) to { toggleFastForward() },
-            getString(R.string.menu_filter) to { pickFilter() },
-        )
-        if (game.system == GameSystem.N3DS && !onTv) items += getString(R.string.menu_screen_layout) to { pickLayout() }
-        if (game.system == GameSystem.NDS && !onTv) items += getString(R.string.menu_screen_layout) to { pickNdsLayout() }
-        if ((game.system == GameSystem.GBA || game.system == GameSystem.GB) && NativeBridge.linkSupported())
-            items += (if (linkUi.connected) "Link cable: conectado" else "Link cable (rede)") to { linkUi.show() }
-        if (game.system != GameSystem.N3DS) items += "Trapaças" + (if (cheats.list.any { it.enabled }) " (ativas)" else "") to {
-            cheats.showDialog(this, { b -> modal.show(b) }) { glView.queueEvent { cheats.apply() } }
-        }
-        if (game.system == GameSystem.PS1) items += "💿 Trocar disco" to { pickDisk() }
-        if (achievementsOn) items += "🏆 Conquistas" to { showAchievements() }
-        items += (if (recorder?.running == true) "⏹ Parar gravação" else "🎬 Gravar vídeo") to { toggleRecording() }
-        items += "Captura de tela" to { takeScreenshot() }
-        items += "⚙️ Configurações deste jogo" to { gameSettings() }
-        items += getString(R.string.menu_edit_controls) to { startEditing() }
-        items += (if (overlay.visibility == View.VISIBLE) getString(R.string.menu_hide_controls)
-                  else getString(R.string.menu_show_controls)) to {
-            overlay.visibility = if (overlay.visibility == View.VISIBLE) View.INVISIBLE else View.VISIBLE
-        }
-        items += getString(R.string.menu_reset) to { glView.queueEvent { NativeBridge.reset() } }
-        items += getString(R.string.menu_quit) to { quit() }
+    private lateinit var quickMenu: QuickMenu
+    private val sessionStart = System.currentTimeMillis()
 
-        modal.show(MaterialAlertDialogBuilder(this)
-            .setTitle(game.title)
-            .setItems(items.map { it.first }.toTypedArray()) { _, which ->
-                items[which].second()
-            })
+    /** The in-game menu: a side panel over the paused game. */
+    private fun showMenu() {
+        if (modalCount > 0 || !loaded || quickMenu.visible) return
+        NativeBridge.setPaused(true)
+        // Each action runs first (a dialog it opens keeps the game paused),
+        // then the panel closes.
+        fun act(f: () -> Unit): () -> Unit = { f(); quickMenu.close() }
+        val items = mutableListOf(
+            QuickMenu.Item("▶", getString(R.string.menu_resume)) { quickMenu.close() },
+            QuickMenu.Item("💾", getString(R.string.menu_save_state), "6 slots") { slotsInMenu(save = true) },
+            QuickMenu.Item("📂", getString(R.string.menu_load_state)) { slotsInMenu(save = false) },
+            QuickMenu.Item("⏩", "Acelerar", if (fastForward) "ligado" else "${prefs.fastForwardSpeed.toInt()}x", act { toggleFastForward() }),
+            QuickMenu.Item("🎨", getString(R.string.menu_filter),
+                resources.getStringArray(R.array.filter_names).getOrNull(prefs.filter)?.substringBefore(" (") ?: "", act { pickFilter() }),
+        )
+        if (game.system == GameSystem.N3DS && !onTv) items += QuickMenu.Item("🖥", getString(R.string.menu_screen_layout), action = act { pickLayout() })
+        if (game.system == GameSystem.NDS && !onTv) items += QuickMenu.Item("🖥", getString(R.string.menu_screen_layout), action = act { pickNdsLayout() })
+        if ((game.system == GameSystem.GBA || game.system == GameSystem.GB) && NativeBridge.linkSupported())
+            items += QuickMenu.Item("🔗", "Link cable", if (linkUi.connected) "conectado" else "", act { linkUi.show() })
+        if (game.system != GameSystem.N3DS) items += QuickMenu.Item("🃏", "Trapaças", if (cheats.list.any { it.enabled }) "ativas" else "",
+            act { cheats.showDialog(this, { b -> modal.show(b) }) { glView.queueEvent { cheats.apply() } } })
+        if (game.system == GameSystem.PS1) items += QuickMenu.Item("💿", "Trocar disco", action = act { pickDisk() })
+        if (achievementsOn) items += QuickMenu.Item("🏆", "Conquistas", action = act { showAchievements() })
+        items += QuickMenu.Item("🎬", if (recorder?.running == true) "Parar gravação" else "Gravar vídeo",
+            if (recorder?.running == true) "● REC" else "", act { toggleRecording() })
+        items += QuickMenu.Item("📸", "Captura de tela", action = act { takeScreenshot() })
+        items += QuickMenu.Item("⚙️", "Opções do jogo", action = act { gameSettings() })
+        items += QuickMenu.Item("🎮", getString(R.string.menu_edit_controls), action = act { startEditing() })
+        items += QuickMenu.Item("👁", if (overlay.visibility == View.VISIBLE) getString(R.string.menu_hide_controls)
+            else getString(R.string.menu_show_controls), action = act {
+            overlay.visibility = if (overlay.visibility == View.VISIBLE) View.INVISIBLE else View.VISIBLE
+        })
+        items += QuickMenu.Item("↺", getString(R.string.menu_reset), action = act { glView.queueEvent { NativeBridge.reset() } })
+        items += QuickMenu.Item("⏏", getString(R.string.menu_quit), action = act { quit() })
+        val minutes = (System.currentTimeMillis() - sessionStart) / 60000
+        val achievements = if (achievementsOn) NativeBridge.raList().let { l ->
+            if (l.isEmpty()) "" else " · 🏆 ${l.count { it.startsWith("1|") }}/${l.size}" } else ""
+        quickMenu.show(game.title, "${game.system.shortName} · jogando há ${PlayStats.formatTime(minutes * 60000)}$achievements", items)
+    }
+
+    /** Save / load: the six slots as pictures, inside the menu. */
+    private fun slotsInMenu(save: Boolean) {
+        val fmt = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+        val slots = (1..6).map { n ->
+            val f = stateFile(n)
+            if (f.exists()) QuickMenu.Slot(n, "Slot $n · ${fmt.format(Date(f.lastModified()))}",
+                android.graphics.BitmapFactory.decodeFile(f.path + ".png"), true)
+            else QuickMenu.Slot(n, "Slot $n · vazio", null, false)
+        }
+        if (!save && slots.none { it.used }) {
+            showMessage("Nenhum estado salvo ainda")
+            return
+        }
+        quickMenu.showSlots(if (save) "Salvar em qual slot?" else "Carregar qual slot?", slots) { slot ->
+            val path = stateFile(slot).path
+            if (!save && !File(path).exists()) return@showSlots
+            glView.queueEvent {
+                val error = if (save) NativeBridge.saveState(path) else NativeBridge.loadState(path)
+                if (save && error == null) PlayStats.savePicture(File("$path.png"), NativeBridge.screenshot())
+                runOnUiThread {
+                    showMessage(error ?: getString(if (save) R.string.state_saved else R.string.state_loaded, slot))
+                }
+            }
+        }
+    }
+
+    private fun menuClosed() {
+        if (modalCount == 0 && resumed && !overlay.editMode) NativeBridge.setPaused(false)
     }
 
     /**
