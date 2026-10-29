@@ -77,6 +77,17 @@ jobs:
         with:
           name: Cartucho-apk
           path: dist/*.apk
+      - name: Keep unstripped native code (for crash reports)
+        run: |
+          mkdir -p symbols
+          find app/build/intermediates -path '*arm64-v8a*' -name 'libcartucho.so' -size +100k \
+            -exec cp {} symbols/ \; -quit || true
+          ls -la symbols
+      - uses: actions/upload-artifact@v4
+        with:
+          name: symbols-app
+          path: symbols/
+          retention-days: 90
       - name: Publish as the "latest" release
         if: github.event_name != 'pull_request'
         env:

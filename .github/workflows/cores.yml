@@ -57,11 +57,18 @@ jobs:
           $L "vbam build" cmake --build build --target vbam_libretro -j "$(nproc)"
           mkdir -p out
           cp "$(find build -name 'vbam_libretro*.so' | head -1)" out/libvbam_libretro.so
+          # Unstripped copy, to turn crash reports (library + offset) into function names.
+          mkdir -p symbols && cp out/libvbam_libretro.so symbols/
           "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" -s out/libvbam_libretro.so
       - uses: actions/upload-artifact@v4
         with:
           name: core-gba
           path: out/libvbam_libretro.so
+      - uses: actions/upload-artifact@v4
+        with:
+          name: symbols-gba
+          path: symbols/libvbam_libretro.so
+          retention-days: 90
 
   core-nds:
     name: Core DS (melonDS DS)

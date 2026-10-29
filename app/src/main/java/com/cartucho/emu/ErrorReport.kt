@@ -116,6 +116,8 @@ object ErrorReport {
             // The tail is what matters; keep the report pasteable.
             sb.appendLine(f.readText().takeLast(12000))
         }
+        val system = try { Tombstone.recentCrashes(context) } catch (e: Throwable) { "" }
+        if (system.isNotEmpty()) sb.appendLine().appendLine("=== Registro do Android ===").append(system)
         return sb.toString()
     }
 
