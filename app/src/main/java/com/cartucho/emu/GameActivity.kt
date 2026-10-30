@@ -670,7 +670,8 @@ class GameActivity : AppCompatActivity() {
                 val mic = NativeBridge.micRate()
                 runOnUiThread { if (resumed) devices.update(wanted, mic) }
             }
-            if (++frameCounter % 20 == 0) {
+            // The picture's place: right away, then twice a second.
+            if (++frameCounter % 20 == 0 || frameCounter == 2) {
                 val message = NativeBridge.takeMessage()
                 val fps = NativeBridge.measuredFps()
                 val shutdown = NativeBridge.shutdownRequested()

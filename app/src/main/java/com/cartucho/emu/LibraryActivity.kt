@@ -153,6 +153,7 @@ class LibraryActivity : AppCompatActivity() {
             Prefs.raw(this).edit().putBoolean("test_landscape", intent.getBooleanExtra("cartucho_test_landscape", false)).apply()
         if (Prefs.raw(this).getBoolean("test_landscape", false))
             requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        testPlay = intent.getStringExtra("cartucho_test_play")
         intent.getStringExtra("cartucho_test_style")?.let { style ->
             androidx.preference.PreferenceManager.getDefaultSharedPreferences(this).edit().putString("ui_style", style).apply()
         }
@@ -362,12 +363,19 @@ class LibraryActivity : AppCompatActivity() {
         continueRow.setGames(recent)
     }
 
+    /** Automated screenshots: a game to start (part of its file name) once scanned. */
+    private var testPlay: String? = null
+
     private fun rescan() {
         progress.visibility = View.VISIBLE
         io.execute {
             val found = store.scan()
             runOnUiThread {
                 games = found
+                testPlay?.let { part ->
+                    testPlay = null
+                    found.firstOrNull { it.fileName.contains(part, ignoreCase = true) }?.let { launch(it) }
+                }
                 progress.visibility = View.GONE
                 buildChips()
                 applyFilter()

@@ -53,16 +53,19 @@ key KEYCODE_BUTTON_START
 shot 08-start-menu 2
 key KEYCODE_BACK
 
-# Master System: composite TV look, then the handheld and arcade frames.
-# Cards now: recent, GB, NES, SNES, SMS, PS1, all.
-for look in "filter=9;bezel=tv:09-sms-composite" "filter=7;bezel=handheld:10-sms-handheld" "filter=2;bezel=arcade:11-sms-arcade"; do
-  start console true "${look%%:*}"
-  right 4
-  key KEYCODE_DPAD_CENTER; sleep 2
-  key KEYCODE_DPAD_CENTER
-  shot "${look##*:}" 15
+# Master System: composite TV look, then the handheld and arcade frames,
+# started straight from the library (no menus to count).
+play() {  # <name part> <settings> <shot>
+  adb shell am force-stop $PKG
+  adb shell am start -W -n $PKG/.LibraryActivity --es cartucho_test_folder /sdcard/Roms --es cartucho_test_style console \
+    --ez cartucho_test_landscape true --es cartucho_test_set "'$2'" --es cartucho_test_play "'$1'" >> shots/am.txt 2>&1
+  shot "$3" 25
   quit_game
-done
+}
+play "Hello World" "filter=9;bezel=tv" 09-sms-composite-tv
+play "Hello World" "filter=7;bezel=handheld" 10-sms-handheld
+play "Hello World" "filter=2;bezel=arcade" 11-sms-arcade
+play "CPU Test" "filter=8;bezel=auto" 11b-nes-curved-tv
 
 # Portrait.
 start console false "filter=2;bezel=auto"
