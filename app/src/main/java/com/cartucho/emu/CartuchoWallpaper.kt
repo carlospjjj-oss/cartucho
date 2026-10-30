@@ -39,7 +39,7 @@ class CartuchoWallpaper : WallpaperService() {
         private var visible = false
         private var width = 0
         private var height = 0
-        private var shift = 0f
+        private var shift = 0.5f  // middle page until the launcher says otherwise
         private val start = SystemClock.elapsedRealtime()
 
         private var system: GameSystem? = null

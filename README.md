@@ -45,6 +45,9 @@ APK** roda a cada envio e monta o app em poucos minutos usando esses cores.
   <img src="docs/screens/filtros-crt.jpg" width="74%" alt="Filtros CRT, CRT curvo e TV antiga">
   <img src="docs/screens/lista-em-pe.jpg" width="24%" alt="Lista com o celular em pé">
 </p>
+<p>
+  <img src="docs/screens/papel-de-parede.jpg" width="24%" alt="Papel de parede animado">
+</p>
 
 *(Capturas do emulador de testes, com ROMs de teste livres.)*
 
@@ -102,6 +105,15 @@ arquivos".
   gameplay do ScreenScraper (só no Wi-Fi, por padrão).
 - Feito para controle e controle remoto (A/B/X/Y, L/R, START), e também por
   toque.
+
+**Tela inicial do Android**
+- Widget **Continuar jogando**: o último jogo com a imagem de onde você parou,
+  o console e o tempo jogado; um toque e você volta para o jogo.
+- Widget **Jogos recentes**: as capas dos últimos quatro jogos.
+- **Papel de parede animado:** o brilho do visual de console nas cores do
+  console do último jogo (ou de um que você escolher, ou trocando a cada meia
+  hora), com pixels subindo como faíscas e a foto do console; tocar na tela
+  solta uma explosão de pixels. Só anima enquanto aparece na tela.
 
 **Biblioteca**
 - Capas, filtros por console (só dos consoles que você tem), favoritos,
