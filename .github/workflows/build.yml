@@ -137,8 +137,13 @@ jobs:
           { echo "APK gerado automaticamente a partir de ${{ github.sha }}."; echo
             git log -10 --no-merges --format='- %s'; } > notes.md
           gh release delete latest --yes --cleanup-tag 2>/dev/null || true
-          gh release create latest dist/*.apk --title "Cartucho build ${{ github.run_number }}" \
-            --notes-file notes.md --latest
+          # Errors go to an annotation too (readable without the log).
+          if ! out=$(gh release create latest dist/*.apk --title "Cartucho build ${{ github.run_number }}" \
+              --notes-file notes.md --latest 2>&1); then
+            echo "$out"
+            echo "::error title=Release::$(echo "$out" | tail -4 | tr '\n' ' ')"
+            exit 1
+          fi
 
 permissions:
   contents: write
