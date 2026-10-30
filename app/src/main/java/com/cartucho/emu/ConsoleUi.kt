@@ -223,7 +223,11 @@ class ConsoleUi(private val context: Context, private val host: Host) {
 
     private fun buildHome() {
         val w = context.resources.displayMetrics.widthPixels
-        cardWidth = if (landscape) (w * 0.2f).toInt().coerceAtMost(dp(260)) else (w * 0.46f).toInt()
+        val h = context.resources.displayMetrics.heightPixels
+        // Landscape: also short enough to leave room for the title, the
+        // clock above and the hints below.
+        cardWidth = if (landscape) minOf((w * 0.2f).toInt(), dp(260), (h * 0.42f / 1.15f).toInt())
+            else (w * 0.46f).toInt()
         home.addView(TextView(context).apply {
             text = "Cartucho"
             setTextColor(Color.WHITE)
@@ -508,9 +512,9 @@ class ConsoleUi(private val context: Context, private val host: Host) {
         if (landscape) {
             val listW = 0.42f
             list.addView(header, FrameLayout.LayoutParams(MATCH, WRAP))
-            list.addView(tabScroll, FrameLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(48) })
+            list.addView(tabScroll, FrameLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(62) })
             list.addView(gameList, FrameLayout.LayoutParams((root.width.takeIf { it > 0 } ?: context.resources.displayMetrics.widthPixels).let { (it * listW).toInt() }, MATCH).apply {
-                topMargin = dp(96)
+                topMargin = dp(110)
             })
             val top = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -525,7 +529,7 @@ class ConsoleUi(private val context: Context, private val host: Host) {
             panel.addView(col, FrameLayout.LayoutParams(MATCH, WRAP))
             val wPx = context.resources.displayMetrics.widthPixels
             list.addView(panel, FrameLayout.LayoutParams((wPx * (1 - listW)).toInt() - dp(36), MATCH, Gravity.END).apply {
-                topMargin = dp(60); bottomMargin = dp(64); rightMargin = dp(20)
+                topMargin = dp(66); bottomMargin = dp(64); rightMargin = dp(20)
             })
         } else {
             list.addView(header, FrameLayout.LayoutParams(MATCH, WRAP))
@@ -1072,6 +1076,9 @@ class ConsoleUi(private val context: Context, private val host: Host) {
             topMargin = dp(14); rightMargin = dp(20)
         })
         root.fitsSystemWindows = true
+        // Keys are handled in onKey(); no view may take focus, or the first
+        // arrow press would only leave touch mode (and be lost).
+        root.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
         list.visibility = View.GONE
         buildHome()
     }
