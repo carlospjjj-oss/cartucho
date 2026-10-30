@@ -133,6 +133,24 @@ public:
     // Input (any thread). Buttons use RETRO_DEVICE_ID_JOYPAD_* bit positions.
     void SetButtons(uint32_t mask) { buttons_.store(mask, std::memory_order_relaxed); }
     void SetAnalog(int stick, int16_t x, int16_t y);
+    // Online play: the inputs of players 1 and 2 for the next frames, used
+    // instead of SetButtons/SetAnalog (emulation thread). Off with nullptr.
+    void SetNetInputs(const uint32_t* buttons, const int16_t* sticks /* x0,y0,x1,y1 */) {
+        net_on_ = buttons != nullptr;
+        if (net_on_) {
+            net_buttons_[0] = buttons[0];
+            net_buttons_[1] = buttons[1];
+            for (int i = 0; i < 4; i++)
+                net_sticks_[i] = sticks[i];
+        }
+    }
+    // This device's own input as last set by the UI (online play sends it).
+    uint32_t local_buttons() const { return buttons_.load(std::memory_order_relaxed); }
+    void local_stick(int16_t* x, int16_t* y) const {
+        const int32_t packed = analog_[0].load(std::memory_order_relaxed);
+        *x = static_cast<int16_t>(packed & 0xffff);
+        *y = static_cast<int16_t>((packed >> 16) & 0xffff);
+    }
     // Pointer in libretro coordinates (-0x7fff..0x7fff over the game image).
     void SetPointer(int16_t x, int16_t y, bool pressed);
 
@@ -164,6 +182,8 @@ public:
     bool LoadState(const std::string& path, std::string* error);
     // Writes battery save RAM if it changed since the last flush.
     void FlushSaveRam();
+    // Off: the save RAM is someone else's (online guest); never written.
+    void SetSaveRamWritable(bool on) { save_writable_ = on; }
 
     // Shows a message as if the core had sent it (frontend notices).
     void PostMessage(const std::string& text) {
@@ -229,6 +249,7 @@ private:
     std::string system_dir_ = ".";
     std::string save_dir_ = ".";
     std::string save_path_;
+    std::atomic<bool> save_writable_{true};
     std::vector<uint8_t> rom_data_;  // kept alive for cores without need_fullpath
     std::string rom_path_;
     // The core's memory map (SET_MEMORY_MAPS), copied: achievements read it.
@@ -260,6 +281,9 @@ private:
 
     std::atomic<uint32_t> buttons_{0};
     std::atomic<int32_t> analog_[2]{{0}, {0}};  // packed x/y per stick
+    bool net_on_ = false;
+    uint32_t net_buttons_[2] = {0, 0};
+    int16_t net_sticks_[4] = {0, 0, 0, 0};
     std::atomic<int32_t> pointer_{0};
     std::atomic<bool> pointer_pressed_{false};
 

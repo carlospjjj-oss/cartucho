@@ -166,7 +166,7 @@ class LinkUi(
         browser = LinkDiscovery.Browser { found ->
             main.post {
                 hosts.clear()
-                hosts.addAll(found)
+                hosts.addAll(found.filter { it.mode != LinkDiscovery.MODE_NETPLAY })
                 (list.adapter as ArrayAdapter<*>).notifyDataSetChanged()
                 status.text = if (found.isEmpty()) "Procurando partidas no Wi-Fi…" else "Toque numa partida para entrar:"
             }

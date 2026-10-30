@@ -622,6 +622,45 @@ JNI_FN(jstring, linkMessage)(JNIEnv* env, jobject) {
     return m.empty() ? nullptr : ToJava(env, m);
 }
 
+// --- Online play ----------------------------------------------------------------
+
+// Any thread.
+JNI_FN(jboolean, netHost)(JNIEnv* env, jobject, jint port, jstring game) {
+    return g_session && g_session->NetHost(port, ToStd(env, game));
+}
+
+JNI_FN(jboolean, netJoin)(JNIEnv* env, jobject, jstring host, jint port, jstring game) {
+    return g_session && g_session->NetJoin(ToStd(env, host), port, ToStd(env, game));
+}
+
+JNI_FN(void, netStop)(JNIEnv*, jobject) {
+    if (g_session)
+        g_session->NetStop();
+}
+
+// [state, rtt ms, waiting, player (0/1), port, frames run again, resyncs, guest]
+JNI_FN(jintArray, netStatus)(JNIEnv* env, jobject) {
+    jint v[8] = {0, -1, 0, 0, 0, 0, 0, 0};
+    if (g_session) {
+        cartucho::Netplay& n = g_session->net();
+        v[0] = static_cast<jint>(n.state());
+        v[1] = n.rtt_ms();
+        v[2] = n.waiting() ? 1 : 0;
+        v[3] = n.local_player();
+        v[4] = n.port();
+        v[5] = n.rollbacks();
+        v[6] = n.resyncs();
+        v[7] = g_session->net_guest() ? 1 : 0;
+    }
+    jintArray out = env->NewIntArray(8);
+    env->SetIntArrayRegion(out, 0, 8, v);
+    return out;
+}
+
+JNI_FN(jstring, netMessage)(JNIEnv* env, jobject) {
+    return g_session ? ToJava(env, g_session->net().message()) : nullptr;
+}
+
 // --- Error reports ------------------------------------------------------------
 
 // Where a native crash writes the recent log; opened now, since a crashing

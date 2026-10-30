@@ -52,6 +52,9 @@ class GameActivity : AppCompatActivity() {
     // Kept open for the whole game: the core reads the ROM through it.
     private var romFile: android.os.ParcelFileDescriptor? = null
     private lateinit var linkUi: LinkUi
+    private lateinit var netplayUi: NetplayUi
+    /** Online play is on (or starting): no speed-up, rewind or loading states. */
+    private val online get() = ::netplayUi.isInitialized && netplayUi.active
     private lateinit var cheats: Cheats
     private lateinit var devices: Devices
     private lateinit var tvMode: TvMode
@@ -141,6 +144,9 @@ class GameActivity : AppCompatActivity() {
         // Azahar reads the accelerometer in g, the others in m/s².
         NativeBridge.setAccelInG(game.system == GameSystem.N3DS)
         linkUi = LinkUi(this, glView, game, romCrc, modal)
+        // Same emulator and same game file on both sides.
+        netplayUi = NetplayUi(this, glView, game,
+            game.system.coreLibrary + "|" + (if (romCrc != 0L) java.lang.Long.toHexString(romCrc) else game.size.toString()), modal)
         // The surface view joins the layout only now: GLSurfaceView crashes
         // if its surface appears before it has a renderer.
         root.addView(glView, 0, FrameLayout.LayoutParams(MATCH, MATCH))
@@ -511,6 +517,8 @@ class GameActivity : AppCompatActivity() {
     private fun saveResumePoint() {
         if (!prefs.resume || !PlayStats.canResume(game.system)) return
         if (::linkUi.isInitialized && linkUi.connected) return
+        // A guest online has the other player's game: not theirs to continue.
+        if (NativeBridge.netStatus()[7] == 1) return
         val f = PlayStats.resumeState(this, game)
         if (NativeBridge.saveState(f.path) == null)
             PlayStats.saveThumb(this, game, NativeBridge.screenshot())
@@ -577,6 +585,7 @@ class GameActivity : AppCompatActivity() {
         NativeBridge.setPaused(true)
         NativeBridge.stopAudio()
         if (::linkUi.isInitialized) linkUi.release()
+        if (::netplayUi.isInitialized) netplayUi.release()
         if (::tvMode.isInitialized) tvMode.stop()
         countPlayTime()
         glView.queueEvent {
@@ -685,8 +694,13 @@ class GameActivity : AppCompatActivity() {
     }
 
     private fun updateOsd(fps: Float) {
+        if (::netplayUi.isInitialized) netplayUi.takeClosedMessage()?.let {
+            osd.text = it
+            messageUntil = System.currentTimeMillis() + 6000
+        }
         if (System.currentTimeMillis() < messageUntil) return
         val parts = mutableListOf<String>()
+        if (::netplayUi.isInitialized) netplayUi.osd()?.let { parts += it }
         if (prefs.showFps) parts += "%.0f FPS".format(fps)
         if (fastForward) parts += "» %.0fx".format(prefs.fastForwardSpeed)
         osd.text = parts.joinToString("   ")
@@ -751,6 +765,10 @@ class GameActivity : AppCompatActivity() {
                 showMessage("Voltar no tempo fica desligado durante o link")
                 return
             }
+            if (held && online) {
+                showMessage("Voltar no tempo fica desligado no jogo online")
+                return
+            }
             NativeBridge.setRewinding(held)
             if (held) showMessage("« Voltando no tempo")
         }
@@ -763,6 +781,10 @@ class GameActivity : AppCompatActivity() {
     /** Slot 0 is the quick slot (the on-screen S / L buttons). */
     private fun quickState(save: Boolean) {
         if (!loaded) return
+        if (!save && online) {
+            showMessage("Carregar estados fica desligado no jogo online")
+            return
+        }
         val path = stateFile(0).path
         glView.queueEvent {
             val error = if (save) NativeBridge.saveState(path) else NativeBridge.loadState(path)
@@ -946,6 +968,10 @@ class GameActivity : AppCompatActivity() {
             showMessage("Acelerar fica desligado durante o link")
             return
         }
+        if (!fastForward && online) {
+            showMessage("Acelerar fica desligado no jogo online")
+            return
+        }
         fastForward = !fastForward
         NativeBridge.setSpeed(if (fastForward) prefs.fastForwardSpeed else 1f)
         overlay.fastForwardOn = fastForward
@@ -979,6 +1005,8 @@ class GameActivity : AppCompatActivity() {
         if (game.system == GameSystem.NDS && !onTv) items += QuickMenu.Item("🖥", getString(R.string.menu_screen_layout), action = act { pickNdsLayout() })
         if ((game.system == GameSystem.GBA || game.system == GameSystem.GB) && NativeBridge.linkSupported())
             items += QuickMenu.Item("🔗", "Link cable", if (linkUi.connected) "conectado" else "", act { linkUi.show() })
+        if (NetplayUi.supported(game.system) && !onTv)
+            items += QuickMenu.Item("🌐", "Jogar online", if (netplayUi.playing) "conectado" else "", act { netplayUi.show() })
         if (game.system != GameSystem.N3DS) items += QuickMenu.Item("🃏", "Trapaças", if (cheats.list.any { it.enabled }) "ativas" else "",
             act { cheats.showDialog(this, { b -> modal.show(b) }) { glView.queueEvent { cheats.apply() } } })
         if (game.system == GameSystem.PS1) items += QuickMenu.Item("💿", "Trocar disco", action = act { pickDisk() })
@@ -1008,6 +1036,10 @@ class GameActivity : AppCompatActivity() {
             if (f.exists()) QuickMenu.Slot(n, "Slot $n · ${fmt.format(Date(f.lastModified()))}",
                 android.graphics.BitmapFactory.decodeFile(f.path + ".png"), true)
             else QuickMenu.Slot(n, "Slot $n · vazio", null, false)
+        }
+        if (!save && online) {
+            showMessage("Carregar estados fica desligado no jogo online")
+            return
         }
         if (!save && slots.none { it.used }) {
             showMessage("Nenhum estado salvo ainda")

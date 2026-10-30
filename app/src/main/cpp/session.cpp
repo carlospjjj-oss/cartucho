@@ -252,6 +252,65 @@ void Session::set_speed(double speed) {
     host_->SetAudioMuted(speed_ > 1.0);
 }
 
+namespace {
+
+// What online play drives: the core, with both players' inputs per frame.
+class NetCore : public NetMachine {
+public:
+    explicit NetCore(CoreHost& host) : host_(host) {}
+    bool Save(std::vector<uint8_t>* out) override { return host_.SerializeTo(out); }
+    bool Load(const std::vector<uint8_t>& data) override { return host_.UnserializeFrom(data); }
+    void Run(const NetInput inputs[2], bool video, bool audio) override {
+        const uint32_t buttons[2] = {inputs[0].buttons, inputs[1].buttons};
+        const int16_t sticks[4] = {inputs[0].ax, inputs[0].ay, inputs[1].ax, inputs[1].ay};
+        host_.SetNetInputs(buttons, sticks);
+        host_.SetAudioSuppressed(!audio);
+        host_.SetAvFlags((video ? CoreHost::kAvVideo : 0) | (audio ? CoreHost::kAvAudio : 0));
+        host_.RunFrame();
+        host_.SetAvFlags(CoreHost::kAvVideo | CoreHost::kAvAudio);
+        host_.SetAudioSuppressed(false);
+    }
+
+private:
+    CoreHost& host_;
+};
+
+}  // namespace
+
+// Online play: true when it decided this refresh (frames run, or waiting).
+bool Session::NetFrames(double now, int* frames) {
+    if (!net_.active()) {
+        host_->SetNetInputs(nullptr, nullptr);
+        return false;
+    }
+    NetCore core(*host_);
+    net_.Poll(core, now);
+    if (!net_.playing()) {
+        host_->SetNetInputs(nullptr, nullptr);
+        if (net_.is_host())
+            return false;  // the host plays on while the other one joins
+        *frames = 0;      // the guest waits for the host's game
+        pacer_.Reset();
+        return true;
+    }
+    // Always at normal speed, no rewind, no run-ahead.
+    host_->SetAudioMuted(false);
+    const int want = pacer_.Step(now, host_->fps(), 1.0, audio_fill_);
+    NetInput local;
+    local.buttons = host_->local_buttons();
+    host_->local_stick(&local.ax, &local.ay);
+    int ran = 0;
+    for (int i = 0; i < want; i++) {
+        if (!net_.Advance(core, local))
+            break;
+        ran++;
+        if (!host_->uses_hw_render())
+            RecordPicture(1);
+    }
+    *frames = ran;
+    return true;
+}
+
 void Session::Frame(double now) {
     if (reset_pacer_.exchange(false))
         pacer_.Reset();
@@ -268,7 +327,9 @@ void Session::Frame(double now) {
                                            hw.stencil);
         }
         int frames;
-        if (rewinding_ && rewind_available_) {
+        if (NetFrames(now, &frames)) {
+            // Online: run (or wait) in step with the other player.
+        } else if (rewinding_ && rewind_available_) {
             // One step back per refresh: interval x faster than real time.
             frames = 0;
             host_->SetAudioMuted(true);
@@ -302,13 +363,19 @@ void Session::Frame(double now) {
         }
         // Battery saves reach the disk within a few seconds of the game
         // writing them, not only when leaving.
-        if (now - last_flush_ > 5.0) {
+        if (now - last_flush_ > 5.0 && !net_guest_) {
             last_flush_ = now;
             host_->FlushSaveRam();
         }
     }
-    else if (ra_) {
-        ra_->Idle();  // paused: keep answering the server
+    else {
+        if (ra_)
+            ra_->Idle();  // paused: keep answering the server
+        if (loaded_ && net_.active()) {
+            // Paused (a menu is open): the connection still goes on.
+            NetCore core(*host_);
+            net_.Poll(core, now);
+        }
     }
     const FrameSource source = presenter_.Prepare(*host_);
     presenter_.DrawSource(source, width_, height_);

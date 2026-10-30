@@ -481,6 +481,8 @@ void CoreHost::LoadSaveRam() {
 }
 
 void CoreHost::FlushSaveRam() {
+    if (!save_writable_)
+        return;
     if (!game_loaded_ || save_path_.empty())
         return;
     void* mem = api_->get_memory_data(RETRO_MEMORY_SAVE_RAM);
@@ -987,6 +989,20 @@ size_t CoreHost::AudioBatch(const int16_t* data, size_t frames) {
 }
 
 int16_t CoreHost::InputState(unsigned port, unsigned device, unsigned index, unsigned id) {
+    if (net_on_) {
+        // Online: both players' inputs for this frame, as agreed.
+        if (port > 1)
+            return 0;
+        if (device == RETRO_DEVICE_JOYPAD) {
+            const uint32_t mask = net_buttons_[port];
+            if (id == RETRO_DEVICE_ID_JOYPAD_MASK)
+                return static_cast<int16_t>(mask & 0xffff);
+            return (id < 16 && (mask & (1u << id))) ? 1 : 0;
+        }
+        if (device == RETRO_DEVICE_ANALOG && index == RETRO_DEVICE_INDEX_ANALOG_LEFT)
+            return net_sticks_[port * 2 + (id == RETRO_DEVICE_ID_ANALOG_X ? 0 : 1)];
+        return 0;
+    }
     if (port != 0)
         return 0;
     switch (device) {

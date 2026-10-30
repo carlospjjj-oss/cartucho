@@ -40,6 +40,7 @@ add_library(cartucho SHARED
     rewind.cpp
     runahead.cpp
     session.cpp
+    netplay.cpp
 )
 
 target_compile_options(cartucho PRIVATE -Wall -Wextra -Wno-unused-parameter -O2)

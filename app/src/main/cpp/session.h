@@ -15,6 +15,7 @@
 #include "core_host.h"
 #include "recorder.h"
 #include "gl_presenter.h"
+#include "netplay.h"
 #include "rewind.h"
 #include "runahead.h"
 
@@ -88,6 +89,19 @@ public:
     int link_state() const { return link_state_; }
     std::string link_message();
 
+    // --- Online play (netplay.h) --------------------------------------------
+    // Any thread. `game` identifies core and content; both sides must match.
+    bool NetHost(int port, const std::string& game) { net_guest_ = false; return net_.Host(port, game); }
+    bool NetJoin(const std::string& host, int port, const std::string& game) {
+        net_guest_ = true;
+        host_->SetSaveRamWritable(false);
+        return net_.Join(host, port, game);
+    }
+    void NetStop() { net_.Stop(); }
+    Netplay& net() { return net_; }
+    // The game came from the other device: this device's saves stay untouched.
+    bool net_guest() const { return net_guest_; }
+
     // --- TV (a second display in a GL context sharing objects with ours) ----
     // Main GL thread: what the phone shows in TV mode (DS/3DS: the bottom
     // screen; GB/GBA: no picture) and what the TV shows.
@@ -152,6 +166,10 @@ private:
     int rewind_interval_ = 2;
     int frames_since_capture_ = 0;
     std::vector<uint8_t> state_buf_;
+
+    Netplay net_;
+    std::atomic<bool> net_guest_{false};
+    bool NetFrames(double now, int* frames);
 
     void LinkStep();
     using LinkStartFn = int (*)(int, int, int, const char*, int, int);

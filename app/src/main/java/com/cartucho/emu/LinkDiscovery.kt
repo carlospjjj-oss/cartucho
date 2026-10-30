@@ -35,7 +35,11 @@ object LinkDiscovery {
     fun wireMode(mode: Int) = when (mode) { 1 -> WIRE_RFU; 2 -> WIRE_GB; else -> WIRE_CABLE }
     fun modeFromWire(wire: Int) = when (wire) { WIRE_RFU -> 1; WIRE_GB -> 2; WIRE_CABLE -> 0; else -> -1 }
 
+    /** Announcements of online-play rooms (not link cable) carry this mode. */
+    const val MODE_NETPLAY = 9
+
     fun modeName(mode: Int) = when (mode) {
+        MODE_NETPLAY -> "Jogo online"
         1 -> "Adaptador sem fio"
         2 -> "Cabo de Game Boy"
         else -> "Cabo de GBA"
@@ -61,6 +65,7 @@ object LinkDiscovery {
     private fun announcement(a: Announcement): ByteArray = JSONObject()
         .put("vbam", "link-host").put("v", VERSION)
         .put("port", a.port).put("mode", wireMode(a.mode)).put("players", a.players)
+        .apply { if (a.mode == MODE_NETPLAY) put("cartucho_net", 1) }
         .put("game", a.game.take(64)).put("crc", java.lang.Long.toHexString(a.crc))
         .put("name", (Build.MODEL ?: "Android").take(64))
         .put("ver", "Cartucho ${BuildConfig.VERSION_NAME}")
@@ -213,7 +218,8 @@ object LinkDiscovery {
                         if (port !in 1..65535) continue
                         val addr = p.address.hostAddress ?: continue
                         val h = Host(
-                            address = addr, port = port, mode = modeFromWire(o.optInt("mode")),
+                            address = addr, port = port,
+                            mode = if (o.optInt("cartucho_net") == 1) MODE_NETPLAY else modeFromWire(o.optInt("mode")),
                             players = o.optInt("players", 2), game = o.optString("game").trim(),
                             crc = o.optString("crc").toLongOrNull(16) ?: 0L,
                             name = o.optString("name").trim(), version = o.optString("ver").trim(),

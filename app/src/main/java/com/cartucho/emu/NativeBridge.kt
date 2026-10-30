@@ -124,6 +124,15 @@ object NativeBridge {
     /** -1 off, 0 connected, 1 failed, 2 connecting. */
     external fun linkState(): Int
     external fun linkMessage(): String?
+
+    // Online play (rollback netplay). Any thread.
+    external fun netHost(port: Int, game: String): Boolean
+    external fun netJoin(host: String, port: Int, game: String): Boolean
+    external fun netStop()
+    /** [state, rtt ms, waiting, player, port, frames run again, resyncs, guest]; state: 0 off,
+     *  1 waiting for a guest, 2 connecting, 3 syncing, 4 playing, 5 closed, 6 failed. */
+    external fun netStatus(): IntArray
+    external fun netMessage(): String?
 }
 
 /** RetroPad button ids (bit positions in NativeBridge.setButtons). */

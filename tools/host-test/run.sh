@@ -27,7 +27,7 @@ cmake --build "$OUT/libchdr" --target chdr-static -j "$(nproc)" > /dev/null
 L="$OUT/libchdr"
 CHDR="-I$SRC/third_party/libchdr/include $L/libchdr-static.a $L/deps/lzma-26.02/libchdr-lzma.a $L/deps/zstd-1.5.7/libzstd.a $L/deps/miniz-3.1.2/libminiz.a"
 RCLIB="$SRC/chd_reader.cpp $RAFLAGS $OUT/librcheevos.a $CHDR"
-SESSION="$SRC/session.cpp $SRC/achievements.cpp $SRC/recorder.cpp $RCLIB"
+SESSION="$SRC/session.cpp $SRC/achievements.cpp $SRC/recorder.cpp $SRC/netplay.cpp $RCLIB"
 
 $CXX pacer_test.cpp $SESSION $SRC/rewind.cpp $SRC/runahead.cpp $SRC/core_host.cpp $SRC/gl_presenter.cpp -lGLESv2 -lz -ldl -lpthread -o "$OUT/pacer_test"
 $CXX resampler_test.cpp $SRC/resampler.cpp $SRC/core_host.cpp -ldl -o "$OUT/resampler_test"
@@ -42,10 +42,12 @@ $CXX link_test.cpp $SRC/core_host.cpp -ldl -lpthread -o "$OUT/link_test"
 $CXX recorder_test.cpp $SRC/recorder.cpp -lpthread -o "$OUT/recorder_test"
 $CXX achievements_test.cpp $SRC/achievements.cpp $SRC/core_host.cpp $RCLIB -ldl -lpthread -o "$OUT/achievements_test"
 $CXX chd_test.cpp $RCLIB -lpthread -o "$OUT/chd_test"
+$CXX netplay_test.cpp $SRC/netplay.cpp -lpthread -o "$OUT/netplay_test"
 
 "$OUT/pacer_test"
 "$OUT/resampler_test"
 "$OUT/recorder_test"
+"$OUT/netplay_test"
 # A PlayStation-like disc as .cue/.bin and as .chd must hash the same.
 "$OUT/chd_test" roms/disc.cue roms/disc.chd
 # If the GLES test crashes, run it again under gdb for a stack trace.
