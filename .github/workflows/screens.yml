@@ -10,12 +10,73 @@ on:
 permissions:
   contents: write
 
+env:
+  NDK_VERSION: "29.0.14206865"
+
 jobs:
+  # The release APK only runs on ARM phones. The CI emulator is x86_64, so
+  # this builds an APK that also carries x86_64 code and the NES and Sega
+  # cores for it, to see games actually running.
+  x86:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core commits
+        id: sha
+        run: |
+          echo "fceumm=$(grep -oP 'FCEUMM_SHA: \K\w+' .github/workflows/cores.yml)" >> "$GITHUB_OUTPUT"
+          echo "gpgx=$(grep -oP 'GPGX_SHA: \K\w+' .github/workflows/cores.yml)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: x86cores
+          key: x86cores-${{ steps.sha.outputs.fceumm }}-${{ steps.sha.outputs.gpgx }}-v1
+      - name: Install NDK and CMake
+        run: echo "y" | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" "cmake;3.22.1" > /dev/null
+      - name: x86_64 cores
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          NDK="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          mkdir -p x86cores
+          build() {  # lib repo sha jni
+            git init -q "s-$1" && git -C "s-$1" remote add origin "https://github.com/$2.git"
+            git -C "s-$1" fetch -q --depth 1 origin "$3" && git -C "s-$1" checkout -q FETCH_HEAD
+            (cd "s-$1/$4" && "$NDK/ndk-build" -j "$(nproc)" APP_ABI=x86_64 APP_PLATFORM=android-24 > /dev/null)
+            cp "$(find "s-$1" -path '*libs/x86_64/*.so' | head -1)" "x86cores/lib$1_libretro.so"
+          }
+          build fceumm libretro/libretro-fceumm ${{ steps.sha.outputs.fceumm }} jni
+          build genesis_plus_gx libretro/Genesis-Plus-GX ${{ steps.sha.outputs.gpgx }} libretro/jni
+          ls -la x86cores
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+      - name: Build the APK with x86_64
+        env:
+          CARTUCHO_NDK_VERSION: ${{ env.NDK_VERSION }}
+        run: |
+          mkdir -p app/src/main/jniLibs/x86_64
+          cp x86cores/*.so app/src/main/jniLibs/x86_64/
+          gradle --no-daemon -q assembleRelease -PextraAbi=x86_64
+          cp app/build/outputs/apk/release/app-release.apk app.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: x86-apk
+          path: app.apk
+
   screens:
+    needs: x86
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: x86-apk
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -26,7 +87,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release download latest -p '*.apk' -O app.apk
           mkdir -p roms/GB roms/NES roms/SNES roms/SMS roms/PS1
           git clone -q --depth 1 https://github.com/retrio/gb-test-roms.git t-gb
           git clone -q --depth 1 https://github.com/christopherpow/nes-test-roms.git t-nes

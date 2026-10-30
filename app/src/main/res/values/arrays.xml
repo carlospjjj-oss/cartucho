@@ -9,9 +9,21 @@
         <item>Bordas arredondadas 2x (Scale2x)</item>
         <item>Bordas arredondadas 3x (Scale3x)</item>
         <item>TV de tubo (CRT)</item>
+        <item>TV de tubo curva (CRT com vidro)</item>
+        <item>TV antiga (cabo composto)</item>
     </string-array>
     <string-array name="filter_values">
-        <item>0</item><item>1</item><item>2</item><item>3</item><item>4</item><item>5</item><item>6</item><item>7</item>
+        <item>0</item><item>1</item><item>2</item><item>3</item><item>4</item><item>5</item><item>6</item><item>7</item><item>8</item><item>9</item>
+    </string-array>
+    <string-array name="bezel_names">
+        <item>Sem moldura</item>
+        <item>Automática (do console)</item>
+        <item>Portátil</item>
+        <item>TV de tubo</item>
+        <item>Fliperama</item>
+    </string-array>
+    <string-array name="bezel_values">
+        <item>off</item><item>auto</item><item>handheld</item><item>tv</item><item>arcade</item>
     </string-array>
     <string-array name="tex_filter_names">
         <item>Nenhum (original)</item>

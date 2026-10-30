@@ -19,6 +19,8 @@ android {
         versionName = "0.1.$buildNumber"
         ndk {
             abiFilters += listOf("arm64-v8a")
+            // The screenshot workflow adds x86_64 to run on the CI emulator.
+            (project.findProperty("extraAbi") as String?)?.let { abiFilters += it }
         }
         externalNativeBuild {
             cmake {

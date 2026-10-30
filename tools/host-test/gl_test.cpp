@@ -162,7 +162,8 @@ int main(int argc, char** argv) {
               err.c_str());
         for (int i = 0; i < 200; i++)
             host.RunFrame();
-        const char* names[] = {"sharp", "smooth", "sharpsmooth", "lcd", "scanlines", "scale2x", "scale3x"};
+        const char* names[] = {"sharp", "smooth", "sharpsmooth", "lcd", "scanlines", "scale2x", "scale3x", "crt", "crtcurved", "composite"};
+        static_assert(sizeof(names) / sizeof(names[0]) == static_cast<size_t>(Filter::kCount), "a name per filter");
         for (int f = 0; f < static_cast<int>(Filter::kCount); f++) {
             presenter.set_filter(static_cast<Filter>(f));
             presenter.Draw(host, kW, kH);

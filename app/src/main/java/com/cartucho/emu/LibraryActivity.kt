@@ -142,6 +142,15 @@ class LibraryActivity : AppCompatActivity() {
             store.addFolder(Uri.fromFile(java.io.File(path)).toString())
             rescan()
         }
+        intent.getStringExtra("cartucho_test_set")?.let { list ->
+            val e = androidx.preference.PreferenceManager.getDefaultSharedPreferences(this).edit()
+            for (kv in list.split(';').filter { '=' in it }) e.putString(kv.substringBefore('='), kv.substringAfter('='))
+            e.apply()
+        }
+        if (intent.hasExtra("cartucho_test_landscape"))
+            Prefs.raw(this).edit().putBoolean("test_landscape", intent.getBooleanExtra("cartucho_test_landscape", false)).apply()
+        if (Prefs.raw(this).getBoolean("test_landscape", false))
+            requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         intent.getStringExtra("cartucho_test_style")?.let { style ->
             androidx.preference.PreferenceManager.getDefaultSharedPreferences(this).edit().putString("ui_style", style).apply()
         }

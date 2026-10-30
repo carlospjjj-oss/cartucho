@@ -74,6 +74,13 @@ class Prefs(private val context: Context, private val game: Game? = null) {
 
     val downloadCovers: Boolean get() = p.getBoolean("download_covers", true)
 
+    /** Frame around the picture: off, auto, handheld, tv, arcade. */
+    val bezel: String get() = str("bezel", "auto")
+    fun setBezel(value: String) {
+        if (game != null && own("bezel") != null) PerGame.set(context, game, "bezel", value)
+        else p.edit().putString("bezel", value).apply()
+    }
+
     fun setFilter(value: Int) {
         // A game with its own filter keeps changing its own.
         if (game != null && own("filter") != null) PerGame.set(context, game, "filter", value.toString())

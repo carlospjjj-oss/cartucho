@@ -16,6 +16,7 @@ object PerGame {
 
     val items = listOf(
         Item("filter", "Filtro de imagem", R.array.filter_names, R.array.filter_values),
+        Item("bezel", "Moldura", R.array.bezel_names, R.array.bezel_values),
         Item("lcd_color", "Cores de tela real", R.array.lcd_color_names, R.array.lcd_color_values),
         Item("gb_palette", "Paleta do Game Boy clássico", R.array.gb_palette_names, R.array.gb_palette_values),
         Item("frame_blend", "Mistura de quadros", R.array.blend_names, R.array.blend_values),

@@ -40,6 +40,13 @@
             app:entryValues="@array/filter_values"
             app:defaultValue="2"
             app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:key="bezel"
+            app:title="Moldura ao redor do jogo"
+            app:entries="@array/bezel_names"
+            app:entryValues="@array/bezel_values"
+            app:defaultValue="auto"
+            app:useSimpleSummaryProvider="true" />
         <SwitchPreferenceCompat
             app:key="integer_scale"
             app:title="Escala inteira"

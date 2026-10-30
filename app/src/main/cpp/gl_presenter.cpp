@@ -36,6 +36,7 @@ uniform vec2 u_src_size;   // picture size in texels
 uniform vec2 u_out_size;   // picture size on screen in pixels
 uniform vec2 u_uv_scale;
 uniform float u_flip;
+uniform vec4 u_viewport;   // where the picture is drawn: x, y, w, h (GL pixels)
 out vec4 o_color;
 
 vec2 to_texel(vec2 uv) { return uv / u_uv_scale * u_src_size; }
@@ -83,6 +84,28 @@ vec3 scale3x(vec2 cell, vec2 sub) {
     return E;
 }
 
+// The CRT look shared by the TV filters: a sharp-bilinear sample, scanline
+// beams that widen with brightness, and an RGB mask on the screen pixels.
+vec3 crt_shade(vec2 texel, float mask_amount) {
+    vec2 scale = max(floor(u_out_size / u_src_size), vec2(1.0));
+    vec2 base = floor(texel);
+    vec2 range = 0.5 - 0.5 / scale;
+    vec2 centre = texel - base - 0.5;
+    vec2 f = (centre - clamp(centre, -range, range)) * scale + 0.5;
+    vec3 c = texture(u_tex, to_uv(base + f)).rgb;
+    float strength = clamp((min(u_out_size.x / u_src_size.x,
+                                u_out_size.y / u_src_size.y) - 1.5) / 2.0, 0.0, 1.0);
+    float y = fract(texel.y) - 0.5;
+    float lum = dot(c, vec3(0.299, 0.587, 0.114));
+    float width = mix(0.2, 0.36, lum);
+    float beam = exp(-(y * y) / (2.0 * width * width));
+    c *= mix(1.0, mix(0.5, 1.32, beam), strength);
+    int m = int(mod(gl_FragCoord.x, 3.0));
+    vec3 mask = vec3(0.82);
+    if (m == 0) mask.r = 1.18; else if (m == 1) mask.g = 1.18; else mask.b = 1.18;
+    return c * mix(vec3(1.0), mask, strength * mask_amount);
+}
+
 void main() {
     vec2 texel = to_texel(v_uv);
     if (u_mode == 5 || u_mode == 6) {
@@ -95,6 +118,64 @@ void main() {
         if (u_flip > 0.5) cell.y = u_src_size.y - 1.0 - cell.y;
         vec3 c = u_mode == 5 ? scale2x(cell, sub) : scale3x(cell, sub);
         o_color = vec4(c, 1.0);
+        return;
+    }
+    if (u_mode == 8) {
+        // Curved CRT: bends the picture like the glass of a tube TV, rounds
+        // the corners, adds a soft glow around bright parts and a faint
+        // reflection on the glass.
+        vec2 cp = (gl_FragCoord.xy - u_viewport.xy) / u_viewport.zw;
+        vec2 d = cp * 2.0 - 1.0;
+        d *= 1.0 + vec2(0.045, 0.06) * (d.yx * d.yx);
+        vec2 cp2 = d * 0.5 + 0.5;
+        // Rounded, slightly soft edge of the tube.
+        vec2 e = abs(d) - (1.0 - 0.07);
+        float corner = length(max(e, 0.0)) - 0.07;
+        float px_ = 2.0 / min(u_viewport.z, u_viewport.w);
+        float inside = 1.0 - smoothstep(-px_, px_, corner);
+        if (inside <= 0.0) { o_color = vec4(0.0, 0.0, 0.0, 1.0); return; }
+        vec2 duv = vec2(dFdx(v_uv.x) * u_viewport.z, dFdy(v_uv.y) * u_viewport.w);
+        vec2 uv = v_uv + (cp2 - cp) * duv;
+        vec2 t = to_texel(uv);
+        vec3 c = crt_shade(t, 0.75);
+        // Glow: a wide blur of the picture, added where it is bright.
+        vec3 glow = vec3(0.0);
+        for (int i = -2; i <= 2; i++) {
+            glow += texture(u_tex, to_uv(t + vec2(float(i) * 1.5, 0.0))).rgb;
+            glow += texture(u_tex, to_uv(t + vec2(0.0, float(i) * 1.2))).rgb;
+        }
+        glow /= 10.0;
+        c += glow * glow * 0.22;
+        // Darker towards the edges, plus a soft highlight top-left.
+        c *= 1.0 - 0.28 * dot(d * d, vec2(0.5));
+        vec2 h = d - vec2(-0.55, 0.6);
+        c += vec3(0.05) * exp(-dot(h, h) * 4.0);
+        o_color = vec4(clamp(c * 1.08 * inside, 0.0, 1.0), 1.0);
+        return;
+    }
+    if (u_mode == 9) {
+        // Composite TV: the luma a little soft, the colour much softer and
+        // bleeding sideways, light scanlines.
+        const mat3 to_yiq = mat3(0.299, 0.596, 0.211, 0.587, -0.274, -0.523, 0.114, -0.322, 0.312);
+        const mat3 to_rgb = mat3(1.0, 1.0, 1.0, 0.956, -0.272, -1.106, 0.621, -0.647, 1.703);
+        vec3 y = vec3(0.0);
+        float wy = 0.0, wc = 0.0;
+        vec2 iq = vec2(0.0);
+        for (int i = -4; i <= 4; i++) {
+            float fi = float(i);
+            vec3 s = to_yiq * texture(u_tex, to_uv(texel + vec2(fi * 0.5, 0.0))).rgb;
+            float ly = exp(-fi * fi / 3.0), lc = exp(-fi * fi / 18.0);
+            y.x += s.x * ly; wy += ly;
+            iq += s.yz * lc; wc += lc;
+        }
+        vec3 c = to_rgb * vec3(y.x / wy, iq / wc * 1.12);
+        float strength = clamp((min(u_out_size.x / u_src_size.x,
+                                    u_out_size.y / u_src_size.y) - 1.5) / 2.0, 0.0, 1.0);
+        float sy = fract(texel.y) - 0.5;
+        c *= mix(1.0, 0.82 + 0.3 * exp(-sy * sy / 0.08), strength);
+        vec2 n = texel / u_src_size * 2.0 - 1.0;
+        c *= 1.0 - 0.15 * dot(n * n, vec2(0.5));
+        o_color = vec4(clamp(c, 0.0, 1.0), 1.0);
         return;
     }
     if (u_mode == 7) {
@@ -208,6 +289,7 @@ bool GlPresenter::Init() {
     u_uv_scale_ = glGetUniformLocation(program_, "u_uv_scale");
     u_flip_ = glGetUniformLocation(program_, "u_flip");  // vertex and fragment
     u_crop_ = glGetUniformLocation(program_, "u_crop");
+    u_viewport_ = glGetUniformLocation(program_, "u_viewport");
     glUseProgram(program_);
     glUniform1i(glGetUniformLocation(program_, "u_tex"), 0);
 
@@ -405,7 +487,8 @@ void GlPresenter::DrawSource(const FrameSource& source, int surface_width, int s
     glActiveTexture(GL_TEXTURE0);
     glBindSampler(0, 0);
     glBindTexture(GL_TEXTURE_2D, source.texture);
-    const bool linear = filter_ == Filter::kSmooth || filter_ == Filter::kSharpSmooth || filter_ == Filter::kCrt;
+    const bool linear = filter_ == Filter::kSmooth || filter_ == Filter::kSharpSmooth ||
+                        filter_ == Filter::kCrt || filter_ == Filter::kCrtCurved || filter_ == Filter::kComposite;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, linear ? GL_LINEAR : GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, linear ? GL_LINEAR : GL_NEAREST);
 
@@ -425,6 +508,8 @@ void GlPresenter::DrawSource(const FrameSource& source, int surface_width, int s
     glUniform2f(u_uv_scale_, source.uv_w, source.uv_h);
     glUniform1f(u_flip_, source.flip ? 1.f : 0.f);
     glUniform4f(u_crop_, crop_.x0, crop_.y0, crop_.x1, crop_.y1);
+    glUniform4f(u_viewport_, static_cast<float>(viewport_.x), static_cast<float>(surface_height - viewport_.y - viewport_.h),
+                static_cast<float>(viewport_.w), static_cast<float>(viewport_.h));
     glBindVertexArray(vao_);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glBindVertexArray(0);

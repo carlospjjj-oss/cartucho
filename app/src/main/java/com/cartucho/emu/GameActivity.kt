@@ -41,6 +41,7 @@ class GameActivity : AppCompatActivity() {
     private lateinit var prefs: Prefs
     private lateinit var glView: GLSurfaceView
     private lateinit var overlay: ControllerOverlay
+    private lateinit var bezel: BezelView
     private lateinit var osd: TextView
     private lateinit var editPanel: LinearLayout
     private lateinit var gamepad: GamepadInput
@@ -81,6 +82,9 @@ class GameActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Automated screenshots ask for landscape (see LibraryActivity).
+        if (Prefs.raw(this).getBoolean("test_landscape", false))
+            requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         ErrorReport.install(this)
         prefs = Prefs(this)  // replaced once the game is known (per-game settings)
         game = Game(
@@ -206,6 +210,9 @@ class GameActivity : AppCompatActivity() {
             preserveEGLContextOnPause = true
         }
 
+        // Sits right above the game picture (the surface view goes in at index 0 later).
+        bezel = BezelView(this, game.system)
+        root.addView(bezel, FrameLayout.LayoutParams(MATCH, MATCH))
         overlay = ControllerOverlay(this).apply {
             listener = padListener
             onSelectionChanged = { c -> editPanel.findViewWithTag<View>("size")?.isEnabled = c != null }
@@ -426,6 +433,19 @@ class GameActivity : AppCompatActivity() {
         val filter = prefs.filter
         val integer = prefs.integerScale
         glView.queueEvent { NativeBridge.setDisplay(filter, integer, if (portrait) 1 else 0, reserve) }
+        bezel.style = BezelView.Style.entries.firstOrNull { it.name.equals(prefs.bezel, true) } ?: BezelView.Style.AUTO
+    }
+
+    private fun pickBezel() {
+        val names = resources.getStringArray(R.array.bezel_names)
+        val values = resources.getStringArray(R.array.bezel_values)
+        subDialog(MaterialAlertDialogBuilder(this)
+            .setTitle("Moldura")
+            .setSingleChoiceItems(names, values.indexOf(prefs.bezel).coerceAtLeast(0)) { d, which ->
+                prefs.setBezel(values[which])
+                applyDisplay()
+                d.dismiss()
+            })
     }
 
     private fun applyOverlaySettings() {
@@ -647,7 +667,10 @@ class GameActivity : AppCompatActivity() {
                 val shutdown = NativeBridge.shutdownRequested()
                 val vp = NativeBridge.viewport()
                 runOnUiThread {
-                    overlay.setGameRect(android.graphics.Rect(vp[0], vp[1], vp[0] + vp[2], vp[1] + vp[3]))
+                    val rect = android.graphics.Rect(vp[0], vp[1], vp[0] + vp[2], vp[1] + vp[3])
+                    overlay.setGameRect(rect)
+                    bezel.setGameRect(rect)
+                    bezel.showArt = overlay.visibility != View.VISIBLE
                     if (shutdown) quit()
                     if (message != null) showMessage(message)
                     updateOsd(fps)
@@ -949,6 +972,9 @@ class GameActivity : AppCompatActivity() {
             QuickMenu.Item("🎨", getString(R.string.menu_filter),
                 resources.getStringArray(R.array.filter_names).getOrNull(prefs.filter)?.substringBefore(" (") ?: "", act { pickFilter() }),
         )
+        if (game.system != GameSystem.NDS && game.system != GameSystem.N3DS) items += QuickMenu.Item("🖼", "Moldura",
+            resources.getStringArray(R.array.bezel_names).getOrNull(resources.getStringArray(R.array.bezel_values).indexOf(prefs.bezel)) ?: "",
+            act { pickBezel() })
         if (game.system == GameSystem.N3DS && !onTv) items += QuickMenu.Item("🖥", getString(R.string.menu_screen_layout), action = act { pickLayout() })
         if (game.system == GameSystem.NDS && !onTv) items += QuickMenu.Item("🖥", getString(R.string.menu_screen_layout), action = act { pickNdsLayout() })
         if ((game.system == GameSystem.GBA || game.system == GameSystem.GB) && NativeBridge.linkSupported())

@@ -25,6 +25,8 @@ enum class Filter : int {
     kScale2x = 5,       // EPX / Scale2x: rounds diagonal edges, stays crisp
     kScale3x = 6,       // Scale3x (AdvMAME3x): the same at 3x, smoother
     kCrt = 7,           // CRT TV: scanlines, RGB mask, darker corners
+    kCrtCurved = 8,     // CRT with a curved glass, glow and rounded corners
+    kComposite = 9,     // old TV over a composite cable: soft, colour bleed
     kCount
 };
 
@@ -103,7 +105,7 @@ private:
     GLuint vao_ = 0;
     GLuint vbo_ = 0;
     GLint u_mode_ = -1, u_src_size_ = -1, u_out_size_ = -1, u_uv_scale_ = -1, u_flip_ = -1;
-    GLint u_crop_ = -1;
+    GLint u_crop_ = -1, u_viewport_ = -1;
     Crop crop_;
     bool show_picture_ = true;
     GLuint sw_texture_ = 0;
