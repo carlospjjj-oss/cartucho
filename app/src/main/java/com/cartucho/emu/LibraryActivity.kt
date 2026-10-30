@@ -265,6 +265,8 @@ class LibraryActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Back from a game: the home-screen widgets show it now.
+        Widgets.refresh(this)
         // Coming back from a game that closed by itself: offer the report.
         if (ErrorReport.hasNew(this)) {
             if (consoleUi == null) Snackbar.make(grid, "O último jogo teve um problema.", Snackbar.LENGTH_LONG)
@@ -370,6 +372,7 @@ class LibraryActivity : AppCompatActivity() {
         progress.visibility = View.VISIBLE
         io.execute {
             val found = store.scan()
+            Widgets.refresh(this)
             runOnUiThread {
                 games = found
                 testPlay?.let { part ->

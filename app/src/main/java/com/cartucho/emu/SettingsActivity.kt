@@ -258,6 +258,28 @@ class SettingsActivity : AppCompatActivity() {
                     true
                 }
             }
+            findPreference<Preference>("widget_add")?.setOnPreferenceClickListener {
+                val ctx = requireContext()
+                val mgr = android.appwidget.AppWidgetManager.getInstance(ctx)
+                if (!mgr.isRequestPinAppWidgetSupported) {
+                    MaterialAlertDialogBuilder(ctx)
+                        .setMessage("Segure um espaço vazio da tela inicial → Widgets → Cartucho.")
+                        .setPositiveButton(android.R.string.ok, null).show()
+                } else {
+                    mgr.requestPinAppWidget(android.content.ComponentName(ctx, Widgets.ContinueWidget::class.java), null, null)
+                }
+                true
+            }
+            findPreference<Preference>("wallpaper_set")?.setOnPreferenceClickListener {
+                val ctx = requireContext()
+                val intent = android.content.Intent(android.app.WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
+                    .putExtra(android.app.WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
+                        android.content.ComponentName(ctx, CartuchoWallpaper::class.java))
+                runCatching { startActivity(intent) }.onFailure {
+                    runCatching { startActivity(android.content.Intent(android.app.WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER)) }
+                }
+                true
+            }
             findPreference<Preference>("update_now")?.apply {
                 summary = "Versão instalada: 0.1.${Updater.currentBuild(requireContext())}"
                 setOnPreferenceClickListener { Updater.checkNow(requireActivity()); true }

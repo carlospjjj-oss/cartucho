@@ -53,4 +53,8 @@
     <string name="layout_large">Tela grande + pequena</string>
     <string name="layout_single">Só uma tela</string>
     <string name="swap_screens">Trocar telas de lugar</string>
+    <string name="widget_continue_desc">Continuar jogando: o último jogo, de onde você parou</string>
+    <string name="widget_recent_desc">Os últimos quatro jogos, para abrir com um toque</string>
+    <string name="wallpaper_name">Cartucho</string>
+    <string name="wallpaper_desc">Fundo animado nas cores do console do seu último jogo, com pixels flutuando</string>
 </resources>

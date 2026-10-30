@@ -15,6 +15,31 @@
     <string-array name="filter_values">
         <item>0</item><item>1</item><item>2</item><item>3</item><item>4</item><item>5</item><item>6</item><item>7</item><item>8</item><item>9</item>
     </string-array>
+    <string-array name="wallpaper_theme_names">
+        <item>Do último jogo</item>
+        <item>Trocar de console a cada meia hora</item>
+        <item>Game Boy Advance</item>
+        <item>Game Boy / Color</item>
+        <item>Nintendo DS</item>
+        <item>Nintendo 3DS</item>
+        <item>Nintendo (NES)</item>
+        <item>Super Nintendo</item>
+        <item>Mega Drive</item>
+        <item>Master System</item>
+        <item>Game Gear</item>
+        <item>PlayStation</item>
+    </string-array>
+    <string-array name="wallpaper_theme_values">
+        <item>last</item><item>cycle</item><item>GBA</item><item>GB</item><item>NDS</item><item>N3DS</item><item>NES</item><item>SNES</item><item>MD</item><item>SMS</item><item>GG</item><item>PS1</item>
+    </string-array>
+    <string-array name="wallpaper_pixels_names">
+        <item>Poucos</item>
+        <item>Normal</item>
+        <item>Muitos</item>
+    </string-array>
+    <string-array name="wallpaper_pixels_values">
+        <item>few</item><item>normal</item><item>many</item>
+    </string-array>
     <string-array name="media_video_names">
         <item>Só no Wi-Fi</item>
         <item>Sempre</item>
