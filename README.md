@@ -38,6 +38,11 @@ também como artefato da execução em **Actions**. Todos os APKs são assinados
 com a mesma chave, então cada um instala por cima do anterior sem perder
 saves.
 
+Depois de instalado, o próprio app avisa quando sai uma versão nova (ao abrir,
+no máximo a cada 6 horas), mostra as novidades, baixa e chama o instalador do
+Android. Dá para desligar o aviso ou procurar na hora em Configurações → Sobre
+o app.
+
 ## Formatos de jogo
 
 | Console | Arquivos |
@@ -57,6 +62,17 @@ Também abre `.zip` e `.7z`, que são extraídos na primeira vez que você joga.
 arquivos".
 
 ## O que tem
+
+**Visual de console** (parecido com o Batocera; a grade de capas continua como opção)
+- Carrossel de consoles com fotos reais de cada aparelho, cores e fundo
+  animado de cada console, sons de navegação e música de fundo (ou a sua).
+- Lista de jogos com painel: capa, **tela de título e capturas** se
+  alternando, logotipo do jogo, um fundo com uma imagem do jogo, dados,
+  tempo jogado e saves.
+- **Prévia em movimento:** os seus últimos momentos no jogo, ou o vídeo de
+  gameplay do ScreenScraper (só no Wi-Fi, por padrão).
+- Feito para controle e controle remoto (A/B/X/Y, L/R, START), e também por
+  toque.
 
 **Biblioteca**
 - Capas, filtros por console (só dos consoles que você tem), favoritos,
@@ -96,7 +112,12 @@ arquivos".
 
 **Imagem**
 - Filtros: nítido, suave, nítido suave, tela LCD, linhas de TV, TV de tubo
-  (CRT) e bordas arredondadas Scale2x/Scale3x.
+  (CRT), **TV de tubo curva** (vidro curvo, cantos arredondados e brilho),
+  **TV antiga** (cabo composto, cores escorrendo) e bordas arredondadas
+  Scale2x/Scale3x.
+- **Molduras** em volta do jogo nas faixas vazias da tela: corpo de portátil,
+  TV de tubo ou fliperama, nas cores do console (automática por console, ou
+  escolhida por jogo).
 - Cores de tela real do GBA/GBC (GBA, GBA SP, Micro, DS Lite, Switch Online),
   paletas do Game Boy clássico e mistura de quadros para transparências.
 - 3DS: filtros de textura (xBRZ, ScaleForce, MMPX, Anime4K), cache de
@@ -116,6 +137,13 @@ arquivos".
   (analógicos no controle e, se quiser, na tela) e troca de disco (.m3u).
 
 **Conexões**
+- 🌐 **Jogo online (2 jogadores):** os dois abrem o mesmo jogo; um cria a sala
+  (jogador 1) e o outro entra (jogador 2). No mesmo Wi-Fi as salas aparecem
+  sozinhas; pela internet, com Tailscale/ZeroTier ou a porta 5740 aberta.
+  Usa *rollback* (como os jogos de luta modernos): o jogo não espera a rede;
+  quando a jogada do outro chega diferente do previsto, os quadros são
+  refeitos na hora. Os saves de quem entra não são alterados. Funciona em
+  todos os consoles menos DS e 3DS.
 - **Link cable pela rede** (GBA e Game Boy): as partidas no mesmo Wi-Fi
   aparecem sozinhas. Funciona com cabo de GBA (2 a 4 jogadores) e com o
   adaptador sem fio (Union Room de Pokémon). Conecta também com o VBA-M de PC.
@@ -159,6 +187,7 @@ aparecem nos aparelhos pertencem aos seus donos.
   - áudio AAudio com reamostragem (`audio_output`, `resampler`);
   - ritmo dos quadros, modo TV e link (`session`);
   - voltar no tempo (`rewind`), run-ahead (`runahead`), conquistas (`achievements`) e gravação de vídeo (`recorder`);
+  - jogo online com rollback (`netplay`);
   - a ponte JNI (`android_jni`).
 - `app/src/main/java/com/cartucho/emu/` — o app:
   - biblioteca, tela do jogo, controle na tela (`ControllerOverlay`, `ButtonPainter`) e controles físicos (`GamepadInput`, `PadMap`);
