@@ -262,8 +262,11 @@ class ConsoleUi(private val context: Context, private val host: Host) {
             } else styleCards()
         }
         val cardHeight = (cardWidth * 1.15f).toInt()
-        home.addView(carousel, FrameLayout.LayoutParams(MATCH, cardHeight + dp(40), Gravity.CENTER_VERTICAL).apply {
-            bottomMargin = if (landscape) dp(70) else dp(110)
+        // Landscape: below the title and the clock; portrait: centred.
+        home.addView(carousel, if (landscape) FrameLayout.LayoutParams(MATCH, cardHeight + dp(40), Gravity.TOP).apply {
+            topMargin = dp(54)
+        } else FrameLayout.LayoutParams(MATCH, cardHeight + dp(40), Gravity.CENTER_VERTICAL).apply {
+            bottomMargin = dp(110)
         })
         homeTitle.apply {
             setTextColor(Color.WHITE)

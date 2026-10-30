@@ -1,6 +1,7 @@
 #include "core_host.h"
 
 #include <dlfcn.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -125,6 +126,14 @@ bool ReadFd(int fd, std::vector<uint8_t>* out) {
 
 // Writes through a temporary file so a crash mid-write never leaves a
 // truncated save behind.
+// mkdir -p.
+void MakeDirs(const std::string& dir) {
+    for (size_t at = 1; at <= dir.size(); at++) {
+        if (at == dir.size() || dir[at] == '/')
+            mkdir(dir.substr(0, at).c_str(), 0755);
+    }
+}
+
 bool WriteFileAtomic(const std::string& path, const void* data, size_t size) {
     const std::string tmp = path + ".tmp";
     FILE* f = std::fopen(tmp.c_str(), "wb");
@@ -279,9 +288,32 @@ bool CoreHost::LoadGame(const std::string& rom_path, const std::string& save_pat
 
     retro_game_info info{};
     info.path = rom_path_.c_str();
+    if (rom_fd_ >= 0) {
+        // The game came as an open file; the path only carries its name.
+        // Some cores open the path anyway (Genesis Plus GX always, FCEUmm
+        // for some formats): give them a real copy there too when it is
+        // small (cartridge games) or when they need it.
+        if (!ReadFd(rom_fd_, &rom_data_) || rom_data_.empty()) {
+            *error = "Could not read " + rom_path_;
+            return false;
+        }
+        if (system_info_.need_fullpath || rom_data_.size() <= (64u << 20)) {
+            const size_t slash = rom_path_.find_last_of('/');
+            if (slash != std::string::npos)
+                MakeDirs(rom_path_.substr(0, slash));
+            if (!WriteFileAtomic(rom_path_, rom_data_.data(), rom_data_.size()) && system_info_.need_fullpath) {
+                *error = "Could not write " + rom_path_;
+                return false;
+            }
+        }
+        if (system_info_.need_fullpath)
+            std::vector<uint8_t>().swap(rom_data_);
+    } else if (!system_info_.need_fullpath && !ReadFile(rom_path_, &rom_data_)) {
+        *error = "Could not read " + rom_path_;
+        return false;
+    }
     if (!system_info_.need_fullpath) {
-        const bool ok = rom_fd_ >= 0 ? ReadFd(rom_fd_, &rom_data_) : ReadFile(rom_path_, &rom_data_);
-        if (!ok || rom_data_.empty()) {
+        if (rom_data_.empty()) {
             *error = "Could not read " + rom_path_;
             return false;
         }
