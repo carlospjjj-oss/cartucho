@@ -249,6 +249,15 @@ class SettingsActivity : AppCompatActivity() {
                 Prefs.raw(requireContext()).getString("ss_status", null) ?: "Ainda não usado"
             findPreference<Preference>("tgdb_status")?.summary =
                 Prefs.raw(requireContext()).getString("tgdb_status", null) ?: "Ainda não usado"
+            findPreference<Preference>("media_clear")?.apply {
+                val media = GameMedia(requireContext(), Covers(requireContext()))
+                summary = "Ocupando ${media.sizeBytes() / (1024 * 1024)} MB"
+                setOnPreferenceClickListener {
+                    media.clear()
+                    summary = "Ocupando 0 MB"
+                    true
+                }
+            }
             findPreference<Preference>("update_now")?.apply {
                 summary = "Versão instalada: 0.1.${Updater.currentBuild(requireContext())}"
                 setOnPreferenceClickListener { Updater.checkNow(requireActivity()); true }

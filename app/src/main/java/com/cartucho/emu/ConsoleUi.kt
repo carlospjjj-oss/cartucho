@@ -47,6 +47,7 @@ class ConsoleUi(private val context: Context, private val host: Host) {
 
     interface Host {
         val covers: Covers
+        val media: GameMedia
         val info: GameInfo
         val store: LibraryStore
         fun games(): List<Game>
@@ -384,6 +385,16 @@ class ConsoleUi(private val context: Context, private val host: Host) {
     private val listTitle = TextView(context)
     private val cover = ImageView(context)
     private val preview = TextureView(context)
+    /** Title screen and screenshots taking turns over the cover. */
+    private val slide = ImageView(context)
+    /** The game's logo (ScreenScraper), above its name. */
+    private val logo = ImageView(context)
+    /** A big faded picture of the game behind the whole list. */
+    private val backdrop = ImageView(context)
+    private val mediaIo = Executors.newSingleThreadExecutor()
+    private var slides: List<File> = emptyList()
+    private var slideAt = 0
+    private var mediaVideo: File? = null
     private val name = TextView(context)
     private val meta = TextView(context)
     private val chips = LinearLayout(context)
@@ -446,8 +457,17 @@ class ConsoleUi(private val context: Context, private val host: Host) {
         }
         cover.scaleType = ImageView.ScaleType.FIT_CENTER
         picture.addView(cover, FrameLayout.LayoutParams(MATCH, MATCH))
+        slide.scaleType = ImageView.ScaleType.FIT_CENTER
+        slide.alpha = 0f
+        picture.addView(slide, FrameLayout.LayoutParams(MATCH, MATCH))
         picture.addView(preview, FrameLayout.LayoutParams(MATCH, MATCH))
         preview.alpha = 0f
+        logo.scaleType = ImageView.ScaleType.FIT_START
+        logo.adjustViewBounds = true
+        logo.visibility = View.GONE
+        backdrop.scaleType = ImageView.ScaleType.CENTER_CROP
+        backdrop.alpha = 0f
+        list.addView(backdrop, 0, FrameLayout.LayoutParams(MATCH, MATCH))
         name.apply {
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
@@ -476,6 +496,7 @@ class ConsoleUi(private val context: Context, private val host: Host) {
         }
         val texts = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
+            addView(logo, LinearLayout.LayoutParams(WRAP, dp(if (landscape) 56 else 40)).apply { bottomMargin = dp(4) })
             addView(name)
             addView(meta, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(4) })
             addView(HorizontalScrollView(context).apply { isHorizontalScrollBarEnabled = false; addView(chips) },
@@ -683,6 +704,7 @@ class ConsoleUi(private val context: Context, private val host: Host) {
         if (slots > 0) addChip("💾 $slots ${if (slots == 1) "save" else "saves"}")
         if (host.store.isFavorite(g)) addChip("★ Favorito")
         description.text = ""
+        clearMedia()
         cover.setImageDrawable(null)
         // No cover: the console's drawing instead of an empty frame.
         host.covers.load(g, cover) { found -> if (!found && cover.tag != null) cover.setImageResource(artFor(g.system.name)) }
@@ -738,18 +760,83 @@ class ConsoleUi(private val context: Context, private val host: Host) {
                     }, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.BOTTOM or Gravity.START).apply { leftMargin = dp(6); bottomMargin = dp(6) })
                     shots.addView(box, LinearLayout.LayoutParams(0, MATCH, 1f).apply { rightMargin = dp(8) })
                 }
+                showMedia(g, host.media.cached(g))
                 schedulePreview()
             }
         }
+        // Download what is missing, then show it if the game is still selected.
+        mediaIo.execute {
+            val m = host.media.fetch(g)
+            main.post { if (shown.getOrNull(selected)?.uri == uri) { showMedia(g, m); schedulePreview() } }
+        }
     }
+
+    // --- Game media: slideshow, logo, backdrop ---------------------------------------------
+
+    private val slideRunnable = object : Runnable {
+        override fun run() {
+            if (!inList || slides.isEmpty()) return
+            // Cover, then each picture in turn.
+            slideAt = (slideAt + 1) % (slides.size + 1)
+            if (slideAt == 0) slide.animate().alpha(0f).setDuration(500).start()
+            else {
+                val bmp = decodeSmall(slides[slideAt - 1], 640)
+                if (bmp != null) {
+                    slide.setImageBitmap(bmp)
+                    slide.animate().alpha(1f).setDuration(500).start()
+                }
+            }
+            main.postDelayed(this, 3500)
+        }
+    }
+
+    private fun clearMedia() {
+        main.removeCallbacks(slideRunnable)
+        slides = emptyList()
+        slideAt = 0
+        mediaVideo = null
+        slide.animate().cancel()
+        slide.alpha = 0f
+        slide.setImageDrawable(null)
+        logo.setImageDrawable(null)
+        logo.visibility = View.GONE
+        backdrop.animate().alpha(0f).setDuration(250).start()
+    }
+
+    private fun showMedia(g: Game, m: GameMedia.Media) {
+        mediaVideo = m.video
+        m.logo?.let { decodeSmall(it, 600) }?.let {
+            logo.setImageBitmap(it)
+            logo.visibility = View.VISIBLE
+        }
+        (m.fanart ?: m.snap)?.let { decodeSmall(it, 960) }?.let {
+            backdrop.setImageBitmap(it)
+            backdrop.animate().alpha(0.22f).setDuration(600).start()
+        }
+        val pics = m.pictures
+        if (pics != slides) {
+            slides = pics
+            main.removeCallbacks(slideRunnable)
+            // Without a cover the first picture shows at once.
+            if (slides.isNotEmpty()) main.postDelayed(slideRunnable, if (cover.drawable == null) 200 else 2500)
+        }
+    }
+
+    private fun decodeSmall(f: File, maxSide: Int): android.graphics.Bitmap? = runCatching {
+        val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(f.path, o)
+        var sample = 1
+        while (maxOf(o.outWidth, o.outHeight) / (sample * 2) >= maxSide) sample *= 2
+        android.graphics.BitmapFactory.decodeFile(f.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+    }.getOrNull()
 
     // --- Moving preview -----------------------------------------------------------------------
 
     private fun schedulePreview() {
         if (!prefs.uiPreviews || !inList || !preview.isAvailable) return
         val g = shown.getOrNull(selected) ?: return
-        val file = PreviewClip.file(context, g)
-        if (!file.exists()) return
+        // The player's own moments first, else the downloaded gameplay video.
+        val file = PreviewClip.file(context, g).takeIf { it.exists() } ?: mediaVideo?.takeIf { it.exists() } ?: return
         stopPreview()
         val uri = g.uri
         val mp = MediaPlayer()
@@ -805,6 +892,7 @@ class ConsoleUi(private val context: Context, private val host: Host) {
         if (!inList) return
         sounds.play(FrontendSounds.Sfx.BACK)
         stopPreview()
+        clearMedia()
         inList = false
         list.visibility = View.GONE
         home.visibility = View.VISIBLE
@@ -890,6 +978,8 @@ class ConsoleUi(private val context: Context, private val host: Host) {
 
     fun release() {
         stopPreview()
+        main.removeCallbacks(slideRunnable)
+        mediaIo.shutdownNow()
         sounds.release()
     }
 

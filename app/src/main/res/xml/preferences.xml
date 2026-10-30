@@ -245,7 +245,7 @@
             app:defaultValue="true" />
     </PreferenceCategory>
 
-    <PreferenceCategory app:title="ScreenScraper (capas)">
+    <PreferenceCategory app:title="ScreenScraper (capas, imagens e vídeos)">
         <Preference
             app:key="ss_info"
             app:selectable="false"
@@ -345,6 +345,23 @@
             app:dialogTitle="Repositório de capas"
             app:dialogMessage="Um repositório do GitHub (ex.: seu-usuario/capas) ou o endereço de uma pasta na web. Coloque as imagens em pastas por console com o nome do jogo: GBA/Eclat Pourpre.png, DS/..., 3DS/..., GB/... (PNG ou JPG). Ele é consultado antes do acervo padrão. Depois de mudar, use Atualizar capas na biblioteca."
             app:useSimpleSummaryProvider="true" />
+        <SwitchPreferenceCompat
+            app:key="game_media"
+            app:title="Imagens e vídeos dos jogos"
+            app:summary="Tela de título, capturas, logotipo e fundo na lista (estilo console). Vídeos precisam de conta no ScreenScraper"
+            app:defaultValue="true" />
+        <ListPreference
+            app:key="media_video"
+            app:title="Baixar vídeos dos jogos"
+            app:entries="@array/media_video_names"
+            app:entryValues="@array/media_video_values"
+            app:defaultValue="wifi"
+            app:dependency="game_media"
+            app:useSimpleSummaryProvider="true" />
+        <Preference
+            app:key="media_clear"
+            app:title="Apagar imagens e vídeos baixados"
+            app:dependency="game_media" />
     </PreferenceCategory>
 
     <PreferenceCategory app:title="Sobre o app">

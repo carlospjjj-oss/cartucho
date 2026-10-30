@@ -256,35 +256,43 @@ class Covers(private val context: Context) {
      * login, network). One request at a time, as their API asks.
      */
     private fun screenScraperUrl(game: Game): String? {
+        val r = ssGame(game)
+        if (!r.configured) return null
+        if (r.offline) return ""
+        return r.jeu?.let { pickMedia(it, listOf("box-2D")) }
+    }
+
+    /** What ScreenScraper knows of a game ("jeu"), or why not. */
+    data class SsResult(val configured: Boolean, val offline: Boolean, val jeu: JSONObject?)
+
+    /**
+     * The game's ScreenScraper record, kept on disk for a month so the cover,
+     * the description and the media share one request. Off the main thread.
+     */
+    fun ssGame(game: Game): SsResult {
         val user = prefs.ssUser
         val devId = prefs.ssDevId
-        if (user.isEmpty() && devId.isEmpty()) return null
-        if (System.currentTimeMillis() < ssPausedUntil) return ""
-        val system = when (game.system) {
-            GameSystem.GBA -> 12
-            GameSystem.GB -> if (game.fileName.endsWith(".gbc", true)) 10 else 9
-            GameSystem.NDS -> 15
-            GameSystem.N3DS -> 17
-            GameSystem.NES -> 3
-            GameSystem.SNES -> 4
-            GameSystem.MD -> 1
-            GameSystem.SMS -> 2
-            GameSystem.GG -> 21
-            GameSystem.PS1 -> 57
+        if (user.isEmpty() && devId.isEmpty()) return SsResult(false, false, null)
+        val cache = File(dir, key(game).replace('/', '_') + ".ss.json")
+        val month = 30L * 24 * 3600 * 1000
+        if (cache.exists() && System.currentTimeMillis() - cache.lastModified() < month) {
+            val text = runCatching { cache.readText() }.getOrDefault("")
+            return SsResult(true, false, if (text.isEmpty()) null else runCatching { JSONObject(text) }.getOrNull())
         }
+        if (System.currentTimeMillis() < ssPausedUntil) return SsResult(true, true, null)
         synchronized(ssLock) {
             val params = linkedMapOf(
                 "devid" to devId, "devpassword" to prefs.ssDevPassword,
                 "softname" to "Cartucho", "output" to "json",
                 "ssid" to user, "sspassword" to prefs.ssPassword,
-                "systemeid" to system.toString(), "romtype" to "rom",
+                "systemeid" to ssSystem(game).toString(), "romtype" to "rom",
                 "romnom" to (if (game.archive.isNotEmpty()) game.archive else game.fileName),
                 "romtaille" to game.size.toString(),
             )
             crcOf(game)?.let { params["crc"] = String.format("%08X", it) }
             val url = "https://api.screenscraper.fr/api2/jeuInfos.php?" +
                 params.entries.joinToString("&") { it.key + "=" + enc(it.value) }
-            val conn = try { URL(url).openConnection() as HttpURLConnection } catch (e: Exception) { return "" }
+            val conn = try { URL(url).openConnection() as HttpURLConnection } catch (e: Exception) { return SsResult(true, true, null) }
             conn.connectTimeout = 10000
             conn.readTimeout = 30000
             conn.setRequestProperty("User-Agent", "Cartucho")
@@ -295,7 +303,8 @@ class Covers(private val context: Context) {
                 when {
                     code == 404 || body.contains("non trouv") -> {
                         ssStatus("Funcionando")
-                        null
+                        cache.writeText("")  // not known: do not ask again for a month
+                        SsResult(true, false, null)
                     }
                     code != 200 || body.contains("Erreur de login") || !body.trimStart().startsWith("{") -> {
                         // Login refused, quota, too many requests, closed API...:
@@ -308,15 +317,17 @@ class Covers(private val context: Context) {
                             code == 423 -> "ScreenScraper fora do ar no momento"
                             else -> "Erro $code"
                         })
-                        ""
+                        SsResult(true, true, null)
                     }
                     else -> {
                         ssStatus("Funcionando")
-                        pickBox(JSONObject(body))
+                        val jeu = JSONObject(body).optJSONObject("response")?.optJSONObject("jeu")
+                        cache.writeText(jeu?.toString() ?: "")
+                        SsResult(true, false, jeu)
                     }
                 }
             } catch (e: Exception) {
-                ""
+                SsResult(true, true, null)
             } finally {
                 conn.disconnect()
             }
@@ -329,33 +340,11 @@ class Covers(private val context: Context) {
      * neither is set up or knows the game. Off the main thread.
      */
     fun describe(game: Game): String? {
-        if ((prefs.ssUser.isNotEmpty() || prefs.ssDevId.isNotEmpty()) && System.currentTimeMillis() >= ssPausedUntil) {
-            synchronized(ssLock) {
-                runCatching {
-                    val params = linkedMapOf(
-                        "devid" to prefs.ssDevId, "devpassword" to prefs.ssDevPassword,
-                        "softname" to "Cartucho", "output" to "json",
-                        "ssid" to prefs.ssUser, "sspassword" to prefs.ssPassword,
-                        "systemeid" to ssSystem(game).toString(), "romtype" to "rom",
-                        "romnom" to (if (game.archive.isNotEmpty()) game.archive else game.fileName),
-                        "romtaille" to game.size.toString(),
-                    )
-                    crcOf(game)?.let { params["crc"] = String.format("%08X", it) }
-                    val conn = URL("https://api.screenscraper.fr/api2/jeuInfos.php?" +
-                        params.entries.joinToString("&") { it.key + "=" + enc(it.value) }).openConnection() as HttpURLConnection
-                    conn.connectTimeout = 10000
-                    conn.readTimeout = 30000
-                    conn.setRequestProperty("User-Agent", "Cartucho")
-                    val body = try { conn.inputStream.bufferedReader().use { it.readText() } } finally { conn.disconnect() }
-                    val synopsis = JSONObject(body).optJSONObject("response")?.optJSONObject("jeu")?.optJSONArray("synopsis")
-                    if (synopsis != null) {
-                        val texts = (0 until synopsis.length()).mapNotNull { synopsis.optJSONObject(it) }
-                            .associate { it.optString("langue") to it.optString("text") }
-                        (texts["pt"] ?: texts["br"] ?: texts["en"] ?: texts.values.firstOrNull())
-                            ?.takeIf { it.isNotBlank() }?.let { return it.trim() }
-                    }
-                }
-            }
+        ssGame(game).jeu?.optJSONArray("synopsis")?.let { synopsis ->
+            val texts = (0 until synopsis.length()).mapNotNull { synopsis.optJSONObject(it) }
+                .associate { it.optString("langue") to it.optString("text") }
+            (texts["pt"] ?: texts["br"] ?: texts["en"] ?: texts.values.firstOrNull())
+                ?.takeIf { it.isNotBlank() }?.let { return it.trim() }
         }
         val key = prefs.tgdbKey
         if (key.isNotEmpty() && System.currentTimeMillis() >= tgdbPausedUntil) {
@@ -406,22 +395,36 @@ class Covers(private val context: Context) {
         GameSystem.PS1 -> 10
     }
 
-    /** The front box art, in the most fitting region available. */
-    private fun pickBox(json: JSONObject): String? {
-        val medias = json.optJSONObject("response")?.optJSONObject("jeu")?.optJSONArray("medias") ?: return null
-        val regions = listOf("br", "us", "wor", "eu", "ss", "jp")
+    /**
+     * The URL of a media of the game, of the first of `types` it has, in the
+     * most fitting region (Brazil, USA, world, Europe, ...).
+     */
+    fun pickMedia(jeu: JSONObject, types: List<String>): String? {
+        val medias = jeu.optJSONArray("medias") ?: return null
+        val regions = listOf("br", "us", "wor", "eu", "ss", "jp", "")
         var best: String? = null
         var bestRank = Int.MAX_VALUE
         for (i in 0 until medias.length()) {
             val m = medias.optJSONObject(i) ?: continue
-            if (m.optString("type") != "box-2D") continue
-            val rank = regions.indexOf(m.optString("region")).let { if (it < 0) regions.size else it }
+            val t = types.indexOf(m.optString("type"))
+            if (t < 0) continue
+            val region = regions.indexOf(m.optString("region")).let { if (it < 0) regions.size else it }
+            val rank = t * 100 + region
             if (rank < bestRank) {
                 bestRank = rank
                 best = m.optString("url").ifEmpty { null }
             }
         }
         return best
+    }
+
+    /** The game's name in the libretro thumbnail collection: (repository, name). */
+    fun libretroName(game: Game): Pair<String, String>? {
+        for (repo in repos(game)) {
+            val names = index(repo) ?: continue
+            bestMatch(game.fileName, names)?.let { return repo to it }
+        }
+        return null
     }
 
     /** CRC32 of small plain ROMs (GB/GBA), the most reliable way to identify them. */

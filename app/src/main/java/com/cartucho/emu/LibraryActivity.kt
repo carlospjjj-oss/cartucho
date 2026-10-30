@@ -39,6 +39,7 @@ class LibraryActivity : AppCompatActivity() {
 
     private lateinit var store: LibraryStore
     private lateinit var covers: Covers
+    private lateinit var media: GameMedia
     private lateinit var adapter: GameAdapter
     private lateinit var grid: RecyclerView
     private lateinit var empty: View
@@ -80,6 +81,7 @@ class LibraryActivity : AppCompatActivity() {
         setContentView(R.layout.activity_library)
         store = LibraryStore(this)
         covers = Covers(this)
+        media = GameMedia(this, covers)
         info = GameInfo(this)
 
         val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
@@ -162,6 +164,7 @@ class LibraryActivity : AppCompatActivity() {
     private fun startConsoleUi() {
         val ui = ConsoleUi(this, object : ConsoleUi.Host {
             override val covers get() = this@LibraryActivity.covers
+            override val media get() = this@LibraryActivity.media
             override val info get() = this@LibraryActivity.info
             override val store get() = this@LibraryActivity.store
             override fun games() = games
