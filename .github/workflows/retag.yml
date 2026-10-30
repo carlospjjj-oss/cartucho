@@ -1,0 +1,21 @@
+# Moves the release tags (cores, screens) to the current main, e.g. after
+# the history was rewritten. Run by hand.
+name: Move release tags
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  retag:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          git fetch -q --tags --force
+          for t in cores screens; do
+            git tag -f "$t" HEAD
+            git push -f origin "refs/tags/$t"
+          done
