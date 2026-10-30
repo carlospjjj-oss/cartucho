@@ -55,6 +55,18 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.11.1"
+      - name: Signing key
+        env:
+          KEY_B64: ${{ secrets.CARTUCHO_KEYSTORE_B64 }}
+        run: |
+          # The key lives in a repository secret, never in the code.
+          if [ -n "$KEY_B64" ]; then
+            echo "$KEY_B64" | base64 -d > "$RUNNER_TEMP/cartucho.keystore"
+            echo "CARTUCHO_KEYSTORE=$RUNNER_TEMP/cartucho.keystore" >> "$GITHUB_ENV"
+            echo "CARTUCHO_KEYSTORE_PASSWORD=cartucho" >> "$GITHUB_ENV"
+          else
+            echo "::warning title=No signing key::Add the CARTUCHO_KEYSTORE_B64 secret; this APK will not update the installed one."
+          fi
       - name: Build the APK with x86_64
         env:
           CARTUCHO_NDK_VERSION: ${{ env.NDK_VERSION }}

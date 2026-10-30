@@ -86,7 +86,7 @@ object Updater {
             main.post {
                 waiting.dismiss()
                 when {
-                    r == null -> message(activity, "Não foi possível ver as atualizações agora. Confira a internet.")
+                    r == null -> message(activity, "Não foi possível ver as atualizações agora (sem internet, ou o GitHub não respondeu).")
                     r.build <= currentBuild(activity) -> message(activity, "O Cartucho já está na versão mais nova (0.1.${currentBuild(activity)}).")
                     else -> offer(activity, r, allowSkip = false)
                 }

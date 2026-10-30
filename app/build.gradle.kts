@@ -31,8 +31,9 @@ android {
 
     signingConfigs {
         // One fixed key so every new APK installs over the previous one and
-        // keeps saves. A key in the CARTUCHO_KEYSTORE* secrets wins; else the
-        // project key (fine for a personal build, not for publishing).
+        // keeps saves. CI decodes it from the CARTUCHO_KEYSTORE_B64 secret;
+        // a local build without it uses a throwaway debug key
+        // (cartucho.keystore, not in the repository).
         create("cartucho") {
             val secret = System.getenv("CARTUCHO_KEYSTORE")?.let { file(it) }?.takeIf { it.exists() }
             storeFile = secret ?: file("cartucho.keystore")
@@ -42,13 +43,15 @@ android {
         }
     }
 
+    // Without the key (a local build), the standard debug key signs.
+    val haveKey = System.getenv("CARTUCHO_KEYSTORE")?.let { file(it).exists() } == true || file("cartucho.keystore").exists()
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("cartucho")
+            signingConfig = signingConfigs.getByName(if (haveKey) "cartucho" else "debug")
         }
         debug {
-            signingConfig = signingConfigs.getByName("cartucho")
+            signingConfig = signingConfigs.getByName(if (haveKey) "cartucho" else "debug")
         }
     }
 

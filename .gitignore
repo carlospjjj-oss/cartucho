@@ -7,3 +7,4 @@ local.properties
 app/src/main/jniLibs/
 tools/host-test/build/
 app/src/main/assets/covers/
+*.keystore
