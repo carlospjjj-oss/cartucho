@@ -147,6 +147,7 @@ class LibraryActivity : AppCompatActivity() {
         }
         if (Prefs(this).uiStyle == "console") startConsoleUi()
         handlePlayIntent(intent)
+        if (intent.getStringExtra("cartucho_test_folder") == null) Updater.checkOnStart(this)
     }
 
     private fun startConsoleUi() {

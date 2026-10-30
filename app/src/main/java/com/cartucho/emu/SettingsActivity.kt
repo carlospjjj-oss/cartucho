@@ -249,6 +249,10 @@ class SettingsActivity : AppCompatActivity() {
                 Prefs.raw(requireContext()).getString("ss_status", null) ?: "Ainda não usado"
             findPreference<Preference>("tgdb_status")?.summary =
                 Prefs.raw(requireContext()).getString("tgdb_status", null) ?: "Ainda não usado"
+            findPreference<Preference>("update_now")?.apply {
+                summary = "Versão instalada: 0.1.${Updater.currentBuild(requireContext())}"
+                setOnPreferenceClickListener { Updater.checkNow(requireActivity()); true }
+            }
             findPreference<Preference>("photo_credits")?.setOnPreferenceClickListener {
                 MaterialAlertDialogBuilder(requireContext())
                     .setTitle("Fotos dos consoles")

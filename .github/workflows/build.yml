@@ -32,6 +32,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 15
       - name: Get the emulator cores
         env:
           GH_TOKEN: ${{ github.token }}
@@ -119,9 +121,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The app shows the "- " lines as what is new.
+          { echo "APK gerado automaticamente a partir de ${{ github.sha }}."; echo
+            git log -10 --no-merges --format='- %s'; } > notes.md
           gh release delete latest --yes --cleanup-tag 2>/dev/null || true
           gh release create latest dist/*.apk --title "Cartucho build ${{ github.run_number }}" \
-            --notes "APK gerado automaticamente a partir de ${{ github.sha }}." --latest
+            --notes-file notes.md --latest
 
 permissions:
   contents: write
