@@ -78,7 +78,11 @@ class BezelView(context: Context, private val system: GameSystem) : View(context
     }
 
     override fun onDraw(canvas: Canvas) {
-        if (!worthDrawing()) return
+        if (!worthDrawing()) {
+            if (cache == null) android.util.Log.d("Cartucho", "bezel: nothing to draw, ${width}x$height game=$game style=$style")
+            return
+        }
+        if (cache == null) android.util.Log.d("Cartucho", "bezel: drawing ${resolved} around $game in ${width}x$height")
         val bmp = cache ?: render().also { cache = it }
         canvas.drawBitmap(bmp, 0f, 0f, null)
     }

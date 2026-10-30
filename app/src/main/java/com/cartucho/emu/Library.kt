@@ -189,8 +189,11 @@ class LibraryStore(private val context: Context) {
                 continue
             }
             val system = GameSystem.forFileName(name, f.length()) ?: continue
-            // .bin/.elf etc. are ambiguous; skip tiny files that cannot be games.
-            if (f.length() < 1024) continue
+            // .bin/.elf etc. are ambiguous; skip tiny files that cannot be
+            // games. Disc sheets and playlists (.cue, .m3u, .ccd) are tiny
+            // text files by nature.
+            val sheet = lower.endsWith(".cue") || lower.endsWith(".m3u") || lower.endsWith(".ccd")
+            if (f.length() < 1024 && !sheet) continue
             tree.games += rel to Game(f.uri.toString(), name, system, f.length())
         }
     }

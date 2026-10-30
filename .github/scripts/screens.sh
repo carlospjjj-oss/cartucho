@@ -43,6 +43,7 @@ shot 04-game-options 2
 key KEYCODE_BACK
 key KEYCODE_DPAD_CENTER
 shot 05-game-nes-crt-tv 15
+shot 05b-game-nes-later 8
 key KEYCODE_BACK
 shot 06-in-game-menu 3
 key KEYCODE_BACK
