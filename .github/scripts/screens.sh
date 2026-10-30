@@ -80,5 +80,12 @@ quit_game
 # The grid look still there.
 start grid false ""
 shot 15-grid-portrait 3
+# The live wallpaper, in the system's preview (theme: the last game's console).
+adb shell am force-stop $PKG
+adb shell am start -a android.service.wallpaper.CHANGE_LIVE_WALLPAPER \
+  --ecn android.service.wallpaper.extra.LIVE_WALLPAPER_COMPONENT $PKG/.CartuchoWallpaper >> shots/am.txt 2>&1
+shot 16-wallpaper 8
+adb shell input tap 540 1300
+shot 17-wallpaper-touch 0.4
 adb logcat -d > shots/logcat.txt || true
 exit 0
