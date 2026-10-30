@@ -545,8 +545,8 @@ class ConsoleUi(private val context: Context, private val host: Host) {
             list.addView(panel, FrameLayout.LayoutParams(MATCH, WRAP).apply {
                 topMargin = dp(94); leftMargin = dp(12); rightMargin = dp(12)
             })
-            list.addView(tabScroll, FrameLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(286) })
-            list.addView(gameList, FrameLayout.LayoutParams(MATCH, MATCH).apply { topMargin = dp(330) })
+            list.addView(tabScroll, FrameLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(300) })
+            list.addView(gameList, FrameLayout.LayoutParams(MATCH, MATCH).apply { topMargin = dp(344) })
             description.maxLines = 2
         }
         preview.surfaceTextureListener = object : TextureView.SurfaceTextureListener {

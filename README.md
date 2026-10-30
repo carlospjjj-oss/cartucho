@@ -31,17 +31,46 @@ que publica o resultado na release `cores`. O VBA-M recebe o patch
 completos do Game Boy e o agendador do GBA nos estados. O workflow **Build
 APK** roda a cada envio e monta o app em poucos minutos usando esses cores.
 
-## Baixar o APK
+## Telas
 
-Cada envio para `main` gera um APK novo. Ele fica em **Releases → latest** e
-também como artefato da execução em **Actions**. Todos os APKs são assinados
-com a mesma chave, então cada um instala por cima do anterior sem perder
-saves.
+<p>
+  <img src="docs/screens/home.jpg" width="49%" alt="Carrossel de consoles">
+  <img src="docs/screens/lista.jpg" width="49%" alt="Lista de jogos">
+</p>
+<p>
+  <img src="docs/screens/moldura-portatil.jpg" width="49%" alt="Moldura de portátil">
+  <img src="docs/screens/moldura-fliperama.jpg" width="49%" alt="Moldura de fliperama">
+</p>
+<p>
+  <img src="docs/screens/filtros-crt.jpg" width="74%" alt="Filtros CRT, CRT curvo e TV antiga">
+  <img src="docs/screens/lista-em-pe.jpg" width="24%" alt="Lista com o celular em pé">
+</p>
 
-Depois de instalado, o próprio app avisa quando sai uma versão nova (ao abrir,
-no máximo a cada 6 horas), mostra as novidades, baixa e chama o instalador do
-Android. Dá para desligar o aviso ou procurar na hora em Configurações → Sobre
-o app.
+*(Capturas do emulador de testes, com ROMs de teste livres.)*
+
+## Baixar e instalar
+
+**[⬇️ Baixar o Cartucho (APK)](https://github.com/carlospjjj-oss/cartucho/releases/latest)**: em
+*Assets*, toque no arquivo `Cartucho-N.apk`.
+
+1. Abra o arquivo baixado. Na primeira vez, o Android pede para permitir que
+   o navegador (ou o app de arquivos) instale apps; permita.
+2. Abra o Cartucho, toque em **Adicionar pasta** e escolha a pasta dos seus
+   jogos. 3DS e PlayStation pedem também "Acesso a todos os arquivos".
+3. Pronto. As capas e as informações dos jogos são baixadas sozinhas.
+
+Precisa de Android 9 ou mais novo, num celular, tablet ou TV com processador
+ARM de 64 bits (quase todos de hoje). DS, 3DS e PlayStation pedem um aparelho
+mais forte.
+
+**Atualizações:** o próprio app avisa quando sai uma versão nova (ao abrir, no
+máximo a cada 6 horas), mostra as novidades, baixa e chama o instalador. Dá
+para desligar o aviso ou procurar na hora em Configurações → Sobre o app. Toda
+versão é assinada com a mesma chave, então instala por cima da anterior sem
+perder os saves.
+
+Cada envio para `main` gera um APK novo, publicado em **Releases → latest** pelo
+workflow **Build APK**.
 
 ## Formatos de jogo
 
@@ -173,11 +202,35 @@ jogos. Jogos de 3DS precisam estar **descriptografados**.
 
 O código do Cartucho é GPL-2.0 ou posterior. Os emuladores mantêm as licenças
 de cada projeto (tabela acima) e são distribuídos como bibliotecas separadas.
+Snes9x e Genesis Plus GX só permitem uso **não comercial**: o Cartucho é e
+continua grátis, e não pode ser vendido.
 
 As fotos dos consoles são de Evan-Amos, do Wikimedia Commons (domínio público,
 e CC BY-SA 3.0 a do Super Nintendo); a lista está em
 [`tools/art/PHOTO_CREDITS.md`](tools/art/PHOTO_CREDITS.md). As marcas que
 aparecem nos aparelhos pertencem aos seus donos.
+
+## Compilar
+
+O jeito mais fácil é fazer um *fork* e deixar o GitHub Actions trabalhar:
+
+1. Rode o workflow **Build cores** uma vez (pode levar mais de meia hora): ele compila os
+   emuladores e publica na release `cores`.
+2. Cada envio roda o **Build APK**, que monta o app com esses cores em poucos
+   minutos e publica na release `latest`.
+3. Para assinar com a sua própria chave (e o app atualizar por cima), crie um
+   keystore com senha `cartucho` e guarde-o em base64 no segredo
+   `CARTUCHO_KEYSTORE_B64` do repositório. Sem ele, o APK sai com a chave de
+   depuração.
+
+Na sua máquina: Android Studio (ou Gradle 8.11) com o NDK
+`29.0.14206865`; baixe os `.so` da release `cores` para
+`app/src/main/jniLibs/arm64-v8a/` e rode `gradle assembleRelease`. Os testes
+do motor rodam no Linux com `tools/host-test/run.sh`.
+
+O workflow **Screenshots** monta um APK também para x86_64, com os
+emuladores de NES e Sega, roda o app num emulador de Android, abre jogos de
+teste e publica as capturas na release `screens`.
 
 ## Estrutura
 
@@ -195,4 +248,7 @@ aparecem nos aparelhos pertencem aos seus donos.
   - nuvem (`CloudSync`), vídeo (`VideoRecorder`) e configurações.
 - `tools/host-test/` — testes do motor que rodam no Linux, inclusive com
   cores reais e ROMs de teste: ritmo, áudio, OpenGL, TV, voltar no tempo,
-  run-ahead, link, conquistas (com servidor falso) e gravação.
+  run-ahead, link, conquistas (com servidor falso), gravação e jogo online
+  (dois aparelhos simulados, com atraso e dessincronização).
+- `tools/art/` — as fotos dos consoles (busca no Wikimedia Commons) e os
+  desenhos das coleções.
