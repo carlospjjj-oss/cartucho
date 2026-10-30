@@ -367,8 +367,8 @@
     <PreferenceCategory app:title="Tela inicial do Android">
         <Preference
             app:key="widget_add"
-            app:title="Adicionar widget \"Continuar jogando\""
-            app:summary="O último jogo na tela inicial, de onde você parou. Há também o widget \"Jogos recentes\" (segure a tela inicial → Widgets → Cartucho)" />
+            app:title="Adicionar widget “Continuar jogando”"
+            app:summary="O último jogo na tela inicial, de onde você parou. Há também o widget “Jogos recentes” (segure a tela inicial → Widgets → Cartucho)" />
         <Preference
             app:key="wallpaper_set"
             app:title="Usar o papel de parede animado"
