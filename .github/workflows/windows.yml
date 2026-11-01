@@ -125,7 +125,8 @@ jobs:
             azahar)
               $L "azahar configure" cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_LIBRETRO=ON -DCITRA_USE_PRECOMPILED_HEADERS=OFF \
                 -DENABLE_QT=OFF -DENABLE_SDL2=OFF -DENABLE_TESTS=OFF -DENABLE_ROOM=OFF -DENABLE_WEB_SERVICE=OFF \
-                -DCMAKE_SHARED_LINKER_FLAGS="-static"
+                -DCMAKE_SHARED_LINKER_FLAGS="-static" \
+                -DCMAKE_C_FLAGS="-include $(cygpath -m "$PWD/../.github/patches/endian-compat.h")"
               $L "azahar build" cmake --build build --target azahar_libretro -j 4
               cp "$(find build -name 'azahar_libretro*.dll' | head -1)" ../out/azahar_libretro.dll ;;
             *)
