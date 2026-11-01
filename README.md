@@ -1,10 +1,12 @@
 # Cartucho
 
-Emulador para Android que joga **Game Boy Advance**, **Game Boy / Color**,
+Emulador para Android e Windows que joga **Game Boy Advance**, **Game Boy / Color**,
 **Nintendo DS**, **Nintendo 3DS**, **NES**, **Super Nintendo**, **Mega Drive**,
 **Master System**, **Game Gear** e **PlayStation** num app só. Tem biblioteca
 com capas, controle na tela colorido e configurável, controles físicos,
-conquistas, saves na nuvem e gravação de vídeo.
+conquistas, saves na nuvem e gravação de vídeo. A versão de PC tem as
+mesmas funções e conversa com o celular: mesmos saves, jogo online e link
+cable entre PC e celular.
 
 Por dentro, o Cartucho é um *frontend* próprio que carrega os emuladores como
 módulos (cores no formato libretro):
@@ -74,6 +76,41 @@ perder os saves.
 
 Cada envio para `main` gera um APK novo, publicado em **Releases → latest** pelo
 workflow **Build APK**.
+
+## Cartucho para PC (Windows)
+
+**[⬇️ Baixar o Cartucho para PC](https://github.com/carlospjjj-oss/cartucho/releases/tag/pc)**: em
+*Assets*, baixe `Cartucho-PC-N.zip`.
+
+1. Extraia a pasta inteira onde quiser e abra o `Cartucho.exe`. Se aparecer
+   "O Windows protegeu o computador", clique em **Mais informações** →
+   **Executar assim mesmo** (o programa não tem assinatura paga).
+2. Clique em **Adicionar pasta de jogos** e escolha a pasta das ROMs.
+
+Precisa de Windows 10 ou 11 de 64 bits e de uma placa de vídeo com OpenGL 4.3
+ou OpenGL ES 3.0 (quase todas de 2013 para cá). Nada para instalar.
+
+Tem o mesmo visual de console do celular (carrossel, lista, capas, músicas) e,
+no menu do jogo (Esc ou o botão central do controle): estados com foto, acelerar,
+voltar no tempo, filtros e molduras, trapaças, opções só daquele jogo, gravação
+de vídeo (.mp4), conquistas, troca de disco e o jeito das telas do DS e do 3DS.
+Teclado e controles de Xbox, PlayStation e outros funcionam direto, e dá para
+trocar os botões.
+
+**PC e celular juntos**
+- **Mesmos saves:** a pasta de dados (`%APPDATA%\Cartucho`) tem a mesma
+  organização do celular. Em Configurações → Contas e nuvem, escolha um arquivo
+  numa pasta do Google Drive, OneDrive ou Dropbox; no celular, o mesmo arquivo
+  em Configurações → Saves na nuvem. O backup manual também é o mesmo `.zip`.
+- **Jogo online:** um cria a sala e o outro entra, PC com PC, PC com celular ou
+  celular com celular. Na mesma rede a sala aparece sozinha; pela internet,
+  com Tailscale, ZeroTier ou a porta 5740 aberta.
+- **Link cable:** Game Boy e GBA trocam e batalham (Pokémon etc.) entre PC e
+  celular, pelo mesmo protocolo do VBA-M de computador.
+
+O programa avisa quando sai uma versão nova e se atualiza sozinho
+(Configurações → Sobre). Para levar num pendrive, crie um arquivo vazio
+`portable.txt` ao lado do `Cartucho.exe`: os dados ficam na própria pasta.
 
 ## Formatos de jogo
 
@@ -240,6 +277,12 @@ Na sua máquina: Android Studio (ou Gradle 8.11) com o NDK
 `app/src/main/jniLibs/arm64-v8a/` e rode `gradle assembleRelease`. Os testes
 do motor rodam no Linux com `tools/host-test/run.sh`.
 
+O PC é montado pelo workflow **Build Windows** (`.github/workflows/windows.yml`):
+compila os mesmos emuladores para Windows com MSYS2, monta o `Cartucho.exe`
+com MinGW no Linux e publica o `.zip` na release `pc`. Na sua máquina (Linux,
+para testar), `cmake -S desktop -B build && cmake --build build` com SDL2;
+para Windows, use `-DCMAKE_TOOLCHAIN_FILE=desktop/cmake/mingw64.cmake`.
+
 O workflow **Screenshots** monta um APK também para x86_64, com os
 emuladores de NES e Sega, roda o app num emulador de Android, abre jogos de
 teste e publica as capturas na release `screens`.
@@ -258,6 +301,11 @@ teste e publica as capturas na release `screens`.
   - biblioteca, tela do jogo, controle na tela (`ControllerOverlay`, `ButtonPainter`) e controles físicos (`GamepadInput`, `PadMap`);
   - capas, trapaças (`Cheats`, `CheatDb`), conquistas (`RetroAchievements`);
   - nuvem (`CloudSync`), vídeo (`VideoRecorder`) e configurações.
+- `desktop/` — o Cartucho para PC, sobre o mesmo motor nativo:
+  - janela, som e controles com SDL2, interface com Dear ImGui (`library_app`, `game_ui`, `game_menus`, `settings_ui`);
+  - jogos em `.zip`/`.7z` (`archive`), trapaças (`cheats`), conquistas (`ra`);
+  - salas e partidas na rede local (`discovery`), saves na nuvem e backup (`cloud`);
+  - vídeo em .mp4 com Media Foundation (`video`) e atualização automática (`updater`).
 - `tools/host-test/` — testes do motor que rodam no Linux, inclusive com
   cores reais e ROMs de teste: ritmo, áudio, OpenGL, TV, voltar no tempo,
   run-ahead, link, conquistas (com servidor falso), gravação e jogo online
