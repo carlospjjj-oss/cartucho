@@ -89,13 +89,11 @@ jobs:
       - uses: msys2/setup-msys2@v2
         if: steps.cache.outputs.cache-hit != 'true'
         with:
-          msystem: MINGW64
-          update: false
-          install: >-
-            git make
-            mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-zlib mingw-w64-x86_64-sfml mingw-w64-x86_64-python
-            mingw-w64-x86_64-pkgconf mingw-w64-x86_64-nasm
+          msystem: UCRT64
+          update: true
+          install: git make
+          pacboy: >-
+            gcc:p cmake:p ninja:p zlib:p python:p pkgconf:p nasm:p
       - name: Fetch
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
@@ -115,7 +113,7 @@ jobs:
               $L "vbam configure" cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
                 -DENABLE_LIBRETRO=ON -DENABLE_QT=OFF -DENABLE_WX=OFF -DENABLE_SDL=OFF \
                 -DBUILD_TESTING=OFF -DENABLE_VULKAN=OFF -DENABLE_LUA=OFF -DENABLE_FFMPEG=OFF \
-                -DENABLE_LINK=ON -DENABLE_NLS=OFF -DCMAKE_SHARED_LINKER_FLAGS="-static -static-libgcc -static-libstdc++"
+                -DENABLE_LINK=OFF -DENABLE_NLS=OFF -DCMAKE_SHARED_LINKER_FLAGS="-static -static-libgcc -static-libstdc++"
               $L "vbam build" cmake --build build --target vbam_libretro -j 4
               cp "$(find build -name 'vbam_libretro*.dll' | head -1)" ../out/vbam_libretro.dll ;;
             melondsds)
