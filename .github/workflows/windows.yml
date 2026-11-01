@@ -132,6 +132,8 @@ jobs:
             azahar)
               # MinGW: the libretro branch uses struct _stat64 but plain fstat.
               sed -i 's/^#elif defined(HAVE_LIBRETRO)$/&\n#define fstat _fstat64/' src/common/file_util.cpp
+              # -Bsymbolic is an ELF option; lld for Windows refuses it.
+              sed -i 's/target_link_libraries(citra_libretro PRIVATE "-Wl,-Bsymbolic")/# no -Bsymbolic on Windows/' src/citra_libretro/CMakeLists.txt
               [ "$(grep -c "define fstat _fstat64" src/common/file_util.cpp)" -ge 2 ] || { echo "::error::azahar: fstat line not found"; exit 1; }
               $L "azahar configure" env CXXFLAGS="$(for h in cstdlib cstring cstdint cstdio cmath type_traits vector string string_view array algorithm numeric iterator memory utility optional functional limits stdexcept map unordered_map set tuple atomic mutex chrono span bit exception new typeinfo thread condition_variable deque list variant sstream initializer_list; do printf -- '-include %s ' $h; done)" cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_LIBRETRO=ON -DCITRA_USE_PRECOMPILED_HEADERS=OFF \
                 -DENABLE_QT=OFF -DENABLE_SDL2=OFF -DENABLE_TESTS=OFF -DENABLE_ROOM=OFF -DENABLE_WEB_SERVICE=OFF \
