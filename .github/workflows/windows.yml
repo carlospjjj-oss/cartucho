@@ -85,7 +85,7 @@ jobs:
         id: cache
         with:
           path: out
-          key: win-${{ matrix.lib }}-${{ steps.sha.outputs.sha }}-${{ hashFiles('.github/patches/vbam-cartucho.patch') }}-v1
+          key: win-${{ matrix.lib }}-${{ steps.sha.outputs.sha }}-${{ hashFiles('.github/patches/vbam-cartucho.patch') }}-v2
       - uses: msys2/setup-msys2@v2
         if: steps.cache.outputs.cache-hit != 'true'
         with:
@@ -114,7 +114,8 @@ jobs:
               $L "vbam configure" cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
                 -DENABLE_LIBRETRO=ON -DENABLE_QT=OFF -DENABLE_WX=OFF -DENABLE_SDL=OFF \
                 -DBUILD_TESTING=OFF -DENABLE_VULKAN=OFF -DENABLE_LUA=OFF -DENABLE_FFMPEG=OFF \
-                -DENABLE_LINK=OFF -DENABLE_NLS=OFF -DCMAKE_SHARED_LINKER_FLAGS="-static -static-libgcc -static-libstdc++"
+                -DENABLE_LINK=OFF -DENABLE_NLS=OFF -DCMAKE_SHARED_LINKER_FLAGS="-static -static-libgcc -static-libstdc++" \
+                -DCMAKE_MODULE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++"
               $L "vbam build" cmake --build build --target vbam_libretro -j 4
               cp "$(find build -name 'vbam_libretro*.dll' | head -1)" ../out/vbam_libretro.dll ;;
             melondsds)
@@ -123,6 +124,9 @@ jobs:
               $L "melonds build" cmake --build build --target melondsds_libretro -j 4
               cp "$(find build -name 'melondsds_libretro*.dll' | head -1)" ../out/melondsds_libretro.dll ;;
             azahar)
+              # MinGW: the libretro branch uses struct _stat64 but plain fstat.
+              sed -i 's/^#elif defined(HAVE_LIBRETRO)$/&\n#define fstat _fstat64/' src/common/file_util.cpp
+              [ "$(grep -c "define fstat _fstat64" src/common/file_util.cpp)" -ge 2 ]
               $L "azahar configure" cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_LIBRETRO=ON -DCITRA_USE_PRECOMPILED_HEADERS=OFF \
                 -DENABLE_QT=OFF -DENABLE_SDL2=OFF -DENABLE_TESTS=OFF -DENABLE_ROOM=OFF -DENABLE_WEB_SERVICE=OFF \
                 -DCMAKE_SHARED_LINKER_FLAGS="-static" \
@@ -133,10 +137,13 @@ jobs:
               d=.; [ -f libretro/Makefile ] && [ ! -f Makefile ] && d=libretro
               mk=Makefile
               [ -f $d/Makefile.libretro ] && mk=Makefile.libretro
-              $L "${{ matrix.lib }} build" make -C $d -f $mk platform=win -j 4
+              LDFLAGS="-static -static-libgcc -static-libstdc++" $L "${{ matrix.lib }} build" make -C $d -f $mk platform=win -j 4
               cp "$(ls $d/*_libretro.dll | head -1)" "../out/${{ matrix.lib }}_libretro.dll" ;;
           esac
           strip -s ../out/*.dll
+          # Only Windows' own DLLs may be needed: nothing from MinGW.
+          if objdump -p ../out/*.dll | grep -iE "DLL Name: (libwinpthread|libgcc|libstdc|libc\+\+|libunwind|zlib)"; then
+            echo "::error::the core needs a MinGW DLL"; exit 1; fi
       - uses: actions/upload-artifact@v4
         with:
           name: wincore-${{ matrix.lib }}
