@@ -1,5 +1,7 @@
 #include "library.h"
 
+#include "archive.h"
+
 #include <json.hpp>
 
 #include <algorithm>
@@ -208,6 +210,7 @@ void Library::Load() {
                 x.sys = s->id;
                 x.size = g.value("size", uint64_t{0});
                 x.cover = g.value("cover", "");
+                x.entry = g.value("entry", "");
                 x.title = TitleOf(x.file_name);
                 x.save_name = SaveNameOf(x.file_name);
                 games_.push_back(std::move(x));
@@ -224,7 +227,7 @@ void Library::Save() {
     j["favorites"] = favs;
     nlohmann::json gs = nlohmann::json::array();
     for (auto& g : games_)
-        gs.push_back({{"path", g.path}, {"file", g.file_name}, {"system", Info(g.sys).key}, {"size", g.size}, {"cover", g.cover}});
+        gs.push_back({{"path", g.path}, {"file", g.file_name}, {"system", Info(g.sys).key}, {"size", g.size}, {"cover", g.cover}, {"entry", g.entry}});
     j["games"] = gs;
     WriteText(JoinPath(Paths::Get().data, "library.json"), j.dump());
 }
@@ -274,6 +277,24 @@ void Walk(const std::string& dir, int depth, Found* out) {
             out->images[Lower(e.name.substr(0, dot))] = path;   // any folder (Skraper media/)
             continue;
         }
+        if (IsArchive(e.name)) {
+            ArchiveEntry inner;
+            if (!PeekArchive(path, &inner)) continue;
+            const size_t slash = inner.name.find_last_of("/\\");
+            const std::string name = slash == std::string::npos ? inner.name : inner.name.substr(slash + 1);
+            const SystemInfo* s = SystemForFile(name, 0);
+            if (!s) continue;
+            Game g;
+            g.path = path;
+            g.file_name = name;
+            g.entry = inner.name;
+            g.sys = s->id;
+            g.size = e.size;
+            g.title = TitleOf(name);
+            g.save_name = SaveNameOf(name);
+            out->games.push_back(std::move(g));
+            continue;
+        }
         const SystemInfo* s = SystemForFile(e.name, e.size);
         if (!s) continue;
         const bool sheet = ext == "cue" || ext == "m3u" || ext == "ccd";
@@ -296,7 +317,7 @@ std::set<std::string> ListedByPlaylists(const std::vector<Game>& games) {
         const std::string lower = Lower(g.file_name);
         const bool m3u = lower.size() > 4 && lower.compare(lower.size() - 4, 4, ".m3u") == 0;
         const bool cue = lower.size() > 4 && lower.compare(lower.size() - 4, 4, ".cue") == 0;
-        if (!m3u && !cue) continue;
+        if ((!m3u && !cue) || !g.entry.empty()) continue;
         std::string text;
         if (!ReadText(g.path, &text)) continue;
         std::istringstream in(text);

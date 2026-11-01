@@ -57,8 +57,13 @@ HttpResult HttpRequest(const std::string& method, const std::string& url, const 
     if (q) {
         DWORD redir = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
         WinHttpSetOption(q, WINHTTP_OPTION_REDIRECT_POLICY, &redir, sizeof(redir));
-        std::wstring hdrs = L"User-Agent: Cartucho\r\n";
-        for (const auto& h : headers) hdrs += W(h) + L"\r\n";
+        std::wstring hdrs;
+        bool agent = false;
+        for (const auto& h : headers) {
+            hdrs += W(h) + L"\r\n";
+            agent = agent || h.rfind("User-Agent:", 0) == 0;
+        }
+        if (!agent) hdrs += L"User-Agent: Cartucho\r\n";
         if (WinHttpSendRequest(q, hdrs.c_str(), static_cast<DWORD>(-1L), body.empty() ? WINHTTP_NO_REQUEST_DATA : const_cast<char*>(body.data()),
                                static_cast<DWORD>(body.size()), static_cast<DWORD>(body.size()), 0) &&
             WinHttpReceiveResponse(q, nullptr)) {

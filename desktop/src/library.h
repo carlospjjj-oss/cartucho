@@ -17,8 +17,9 @@
 namespace cartucho {
 
 struct Game {
-    std::string path;        // the file
-    std::string file_name;
+    std::string path;        // the file (the archive, for zipped games)
+    std::string file_name;   // the game's own name (inside the archive)
+    std::string entry;       // path inside a .zip/.7z, or "" for a plain file
     Sys sys = Sys::GBA;
     uint64_t size = 0;
     std::string title;       // without tags: "Pokemon - FireRed Version"

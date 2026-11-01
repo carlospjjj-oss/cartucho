@@ -79,6 +79,9 @@ public:
     void SetOption(const std::string& key, const std::string& value);
     // Answer to GET_PREFERRED_HW_RENDER (default: OpenGL ES 3).
     void SetPreferredHwContext(retro_hw_context_type type) { preferred_hw_ = type; }
+    // The platform's context is desktop OpenGL (4.3+ core, which runs the
+    // same GLSL ES 3.00 shaders): cores asking for OpenGL are accepted too.
+    void SetDesktopGl(bool on) { desktop_gl_ = on; }
     void SetHwHooks(HwHooks hooks) { hw_hooks_ = std::move(hooks); }
 
     bool LoadCore(const std::string& path, std::string* error);
@@ -264,6 +267,7 @@ private:
     retro_system_av_info av_info_{};
     retro_pixel_format pixel_format_ = RETRO_PIXEL_FORMAT_0RGB1555;
     retro_hw_context_type preferred_hw_ = RETRO_HW_CONTEXT_OPENGLES3;
+    bool desktop_gl_ = false;
     retro_hw_render_callback hw_render_{};
     bool hw_requested_ = false;
     bool hw_context_alive_ = false;

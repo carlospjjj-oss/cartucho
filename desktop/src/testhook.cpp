@@ -44,6 +44,7 @@ void TestHook::BeforeFrame() {
         e.key.state = frame_ == f ? SDL_PRESSED : SDL_RELEASED;
         e.key.keysym.sym = key;
         e.key.keysym.scancode = SDL_GetScancodeFromKey(key);
+        if (SDL_Window* w = SDL_GL_GetCurrentWindow()) e.key.windowID = SDL_GetWindowID(w);
         SDL_PushEvent(&e);
     }
 }

@@ -12,13 +12,29 @@
 
 namespace cartucho {
 
-bool Window::Open(const std::string& title, bool fullscreen, std::string* error) {
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+namespace {
+void GlAttributes(bool desktop) {
+    SDL_GL_ResetAttributes();
+    if (desktop) {
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    } else {
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+    }
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 0);
+}
+}  // namespace
+
+bool Window::Open(const std::string& title, bool fullscreen, std::string* error, bool desktop_gl) {
+    if (const char* force = SDL_getenv("CARTUCHO_DESKTOP_GL"))
+        desktop_gl = desktop_gl || force[0] == '1';
+    desktop_gl_ = desktop_gl;
+    GlAttributes(desktop_gl_);
     Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
     if (fullscreen)
         flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
@@ -29,13 +45,22 @@ bool Window::Open(const std::string& title, bool fullscreen, std::string* error)
     }
     gl_ = SDL_GL_CreateContext(window_);
     if (!gl_) {
-        *error = std::string("O OpenGL ES 3.0 não está disponível nesta placa de vídeo: ") + SDL_GetError() +
-                 ". Atualize o driver de vídeo.";
-        return false;
+        // The other kind: some drivers offer only one of them.
+        const std::string first = SDL_GetError();
+        desktop_gl_ = !desktop_gl_;
+        GlAttributes(desktop_gl_);
+        SDL_DestroyWindow(window_);
+        window_ = SDL_CreateWindow(title.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, flags);
+        gl_ = window_ ? SDL_GL_CreateContext(window_) : nullptr;
+        if (!gl_) {
+            *error = "A placa de vídeo não oferece OpenGL 4.3 nem OpenGL ES 3.0 (" + first +
+                     "). Atualize o driver de vídeo.";
+            return false;
+        }
     }
     SDL_GL_MakeCurrent(window_, gl_);
     if (!gladLoadGLES2(reinterpret_cast<GLADloadfunc>(SDL_GL_GetProcAddress))) {
-        *error = "Não foi possível carregar as funções do OpenGL ES.";
+        *error = "Não foi possível carregar as funções do OpenGL.";
         return false;
     }
     SDL_GL_SetSwapInterval(1);
@@ -61,7 +86,7 @@ void Window::SetupImGui() {
     const std::string regular = JoinPath(fonts, "Inter-Regular.ttf");
     const std::string bold = JoinPath(fonts, "Inter-Bold.ttf");
     static const ImWchar ranges[] = {0x0020, 0x00FF, 0x0100, 0x017F, 0x2000, 0x206F, 0x2190, 0x21FF, 0x2300, 0x23FF,
-                                     0x25A0, 0x25FF, 0x2600, 0x26FF, 0};
+                                     0x25A0, 0x25FF, 0x2600, 0x26FF, 0x2700, 0x27BF, 0};
     ImFontConfig cfg;
     cfg.OversampleH = 2;
     auto load = [&](const std::string& path, float px) -> ImFont* {

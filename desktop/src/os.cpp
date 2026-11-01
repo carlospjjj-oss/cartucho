@@ -12,6 +12,8 @@
 #include <windows.h>
 #include <shobjidl.h>
 #include <shellapi.h>
+#include <shlobj.h>
+#include <knownfolders.h>
 #else
 #include <signal.h>
 #include <sys/wait.h>
@@ -128,6 +130,61 @@ std::string PickFile(const std::string& title, const std::string& desc, const st
     return out;
 }
 
+std::string PickSaveFile(const std::string& title, const std::string& default_name, const std::string& desc,
+                         const std::string& patterns) {
+    std::string out;
+    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    IFileSaveDialog* d = nullptr;
+    if (SUCCEEDED(CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_ALL, IID_IFileSaveDialog, reinterpret_cast<void**>(&d)))) {
+        const std::wstring wd = W(desc), wp = W(patterns);
+        COMDLG_FILTERSPEC spec[1] = {{wd.c_str(), wp.c_str()}};
+        d->SetFileTypes(1, spec);
+        d->SetDefaultExtension(L"zip");
+        d->SetFileName(W(default_name).c_str());
+        d->SetTitle(W(title).c_str());
+        if (SUCCEEDED(d->Show(nullptr))) {
+            IShellItem* item = nullptr;
+            if (SUCCEEDED(d->GetResult(&item))) {
+                PWSTR path = nullptr;
+                if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
+                    out = U(path);
+                    CoTaskMemFree(path);
+                }
+                item->Release();
+            }
+        }
+        d->Release();
+    }
+    return out;
+}
+
+std::string VideosFolder() {
+    PWSTR path = nullptr;
+    std::string out;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Videos, 0, nullptr, &path))) {
+        out = JoinPath(U(path), "Cartucho");
+        CoTaskMemFree(path);
+    }
+    return out.empty() ? JoinPath(Paths::Get().data, "videos") : out;
+}
+
+bool StartDetached(const std::string& program, const std::vector<std::string>& args) {
+    std::wstring cmd = L"\"" + W(program) + L"\"";
+    for (const auto& a : args)
+        cmd += (a.empty() || a.find(' ') != std::string::npos) ? L" \"" + W(a) + L"\"" : L" " + W(a);
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi{};
+    if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW | DETACHED_PROCESS, nullptr, nullptr,
+                        &si, &pi))
+        return false;
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return true;
+}
+
 void OpenUrl(const std::string& url) { ShellExecuteW(nullptr, L"open", W(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL); }
 
 #else
@@ -187,6 +244,28 @@ std::string PickFolder(const std::string& title) {
 
 std::string PickFile(const std::string& title, const std::string&, const std::string&) {
     return RunZenity("--file-selection --title=\"" + title + "\"");
+}
+
+std::string PickSaveFile(const std::string& title, const std::string& default_name, const std::string&,
+                         const std::string&) {
+    return RunZenity("--file-selection --save --confirm-overwrite --filename=\"" + default_name + "\" --title=\"" + title + "\"");
+}
+
+std::string VideosFolder() { return JoinPath(Paths::Get().data, "videos"); }
+
+bool StartDetached(const std::string& program, const std::vector<std::string>& args) {
+    const pid_t pid = fork();
+    if (pid < 0) return false;
+    if (pid == 0) {
+        setsid();
+        std::vector<char*> argv;
+        argv.push_back(const_cast<char*>(program.c_str()));
+        for (const auto& a : args) argv.push_back(const_cast<char*>(a.c_str()));
+        argv.push_back(nullptr);
+        execvp(program.c_str(), argv.data());
+        _exit(127);
+    }
+    return true;
 }
 
 void OpenUrl(const std::string& url) { SDL_OpenURL(url.c_str()); }

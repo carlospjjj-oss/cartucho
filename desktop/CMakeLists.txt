@@ -46,9 +46,27 @@ target_compile_definitions(rcheevos PUBLIC RC_CLIENT_SUPPORTS_HASH RC_HASH_NO_EN
 target_compile_options(rcheevos PRIVATE -O2 -w)
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+# miniz (built inside libchdr) with its zip reader and writer: games in .zip
+# files, the saves backup shared with the phone, the updater.
+set(MINIZ_ARCHIVE_APIS ON CACHE BOOL "" FORCE)
+set(MINIZ_DEFLATE_APIS ON CACHE BOOL "" FORCE)
+set(MINIZ_STDIO ON CACHE BOOL "" FORCE)
+set(MINIZ_TIME ON CACHE BOOL "" FORCE)
 set(CHDR_WANT_TESTS OFF CACHE BOOL "" FORCE)
 set(WITH_SYSTEM_ZLIB OFF CACHE BOOL "" FORCE)
 add_subdirectory(${ENGINE}/third_party/libchdr libchdr EXCLUDE_FROM_ALL)
+target_include_directories(miniz PUBLIC ${ENGINE}/third_party/libchdr/deps/miniz-3.1.2)
+
+# 7-Zip's decoder (public domain LZMA SDK) for games in .7z files. Its LZMA
+# decoder is renamed: libchdr carries another copy.
+file(GLOB SEVENZIP_SOURCES ${TP}/lzma7z/*.c)
+add_library(sevenzip STATIC ${SEVENZIP_SOURCES})
+target_include_directories(sevenzip PUBLIC ${TP}/lzma7z)
+foreach(fn LzmaDec_InitDicAndState LzmaDec_Init LzmaDec_DecodeToDic LzmaDec_DecodeToBuf LzmaProps_Decode
+        LzmaDec_AllocateProbs LzmaDec_FreeProbs LzmaDec_Allocate LzmaDec_Free LzmaDecode)
+    target_compile_definitions(sevenzip PRIVATE ${fn}=Sz7_${fn})
+endforeach()
+target_compile_options(sevenzip PRIVATE -O2 -w)
 
 add_library(glad STATIC ${TP}/glad/src/gles2.c)
 target_include_directories(glad PUBLIC ${TP}/glad/include ${TP}/gles_shim)
@@ -86,12 +104,12 @@ if(WIN32)
     add_executable(cartucho WIN32 ${APP_SOURCES})
     target_link_libraries(cartucho PRIVATE SDL2::SDL2main)
     target_link_options(cartucho PRIVATE -static-libgcc -static-libstdc++ -static)
-    target_link_libraries(cartucho PRIVATE iphlpapi winhttp shell32 ole32 comdlg32)
+    target_link_libraries(cartucho PRIVATE iphlpapi winhttp shell32 ole32 comdlg32 ws2_32 mfuuid uuid)
 else()
     add_executable(cartucho ${APP_SOURCES})
 endif()
 target_include_directories(cartucho PRIVATE src ${TP}/stb ${TP}/json)
-target_link_libraries(cartucho PRIVATE engine imgui SDL2::SDL2)
+target_link_libraries(cartucho PRIVATE engine imgui SDL2::SDL2 miniz sevenzip)
 target_compile_definitions(cartucho PRIVATE CARTUCHO_VERSION="${CARTUCHO_VERSION}")
 
 # Next to the program: assets/ (fonts, sounds), assets/photos (the console

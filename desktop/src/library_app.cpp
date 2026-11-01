@@ -1,5 +1,8 @@
 #include "library_app.h"
 
+#include "cloud.h"
+#include "updater.h"
+
 #include <SDL.h>
 #include <glad/gles2.h>
 #include <imgui.h>
@@ -13,6 +16,7 @@
 #include <ctime>
 #include <functional>
 #include <map>
+#include <mutex>
 #include <memory>
 #include <set>
 #include <thread>
@@ -163,7 +167,21 @@ private:
     std::string notice_;
     double notice_until_ = 0;
     bool quit_ = false;
+    // Background jobs (cloud copy after playing, update check).
+    void Background(std::function<std::string()> job);
+    std::thread bg_;
+    std::mutex bg_mutex_;
+    std::string bg_notice_;
 };
+
+void LibraryUi::Background(std::function<std::string()> job) {
+    if (bg_.joinable()) bg_.join();
+    bg_ = std::thread([this, job] {
+        const std::string m = job();
+        std::lock_guard<std::mutex> lock(bg_mutex_);
+        if (!m.empty()) bg_notice_ = m;
+    });
+}
 
 int RunLibrary() {
     LibraryUi ui;
@@ -318,6 +336,10 @@ void LibraryUi::Play(const Game& g, bool resume) {
     SDL_Delay(220);
     std::vector<std::string> args = {"--play", g.path, "--system", Info(g.sys).key, "--save-name", g.save_name, "--title", g.title};
     if (!resume) args.push_back("--no-resume");
+    if (!g.entry.empty()) {
+        args.push_back("--entry");
+        args.push_back(g.entry);
+    }
     Process* p = StartSelf(args);
     if (!p) {
         Notice("Não foi possível abrir o jogo", 4);
@@ -343,6 +365,13 @@ void LibraryUi::WaitForGame(Process* p) {
     SDL_RaiseWindow(win_.sdl());
     sounds_.Pause(false);
     if (code != 0) Notice("O jogo fechou com um problema (veja game.log na pasta de dados)", 6);
+    // Saves in the cloud: the copy is rewritten after playing.
+    if (!Cloud::File().empty() && Cloud::Auto())
+        Background([] {
+            if (Backup::LastChange() <= Cloud::LastSent()) return std::string();
+            const auto r = Cloud::Send();
+            return r.ok ? std::string("Saves enviados para a nuvem") : r.message;
+        });
     // Drop the old "continue" picture so the new one shows.
     if (images_) images_->Forget(PlayStats::ThumbPath(selected_ < static_cast<int>(shown_.size()) ? shown_[static_cast<size_t>(selected_)].path : ""));
     Refresh();
@@ -1023,11 +1052,24 @@ int LibraryUi::Run() {
     sounds_.SetMusic(Settings::Get().Bool("ui_music", true));
     Refresh();
     if (!Library::Get().folders().empty()) StartScan();
+    if (Settings::Get().Bool("auto_update", true) && Updater::CurrentBuild() > 0 && !std::getenv("CARTUCHO_SHOT"))
+        Background([] {
+            const auto u = Updater::Check();
+            return u.newer ? "Versão nova do Cartucho disponível: Configurações → Sobre → Atualizar agora" : std::string();
+        });
     bool was_scanning = scan_running_;
     TestHook test;
     const double t0 = Now();
     ImGuiIO& io = ImGui::GetIO();
     while (!quit_) {
+        {
+            std::lock_guard<std::mutex> lock(bg_mutex_);
+            if (!bg_notice_.empty()) {
+                Notice(bg_notice_, 6);
+                bg_notice_.clear();
+            }
+        }
+        if (settings_ui_.quit_requested()) quit_ = true;
         // ImGui's own keyboard navigation only in the settings (elsewhere
         // the arrows drive the console-style screens).
         if (modal_ == Modal::kSettings) io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
@@ -1117,6 +1159,7 @@ int LibraryUi::Run() {
         win_.Swap();
     }
     if (scan_thread_.joinable()) scan_thread_.join();
+    if (bg_.joinable()) bg_.join();
     images_.reset();
     for (auto& p : photos_) FreeTexture(&p);
     FreeTexture(&grad_);

@@ -20,7 +20,10 @@ struct Fonts {
 
 class Window {
 public:
-    bool Open(const std::string& title, bool fullscreen, std::string* error);
+    // OpenGL ES 3.0, or desktop OpenGL 4.3 core (which runs the same GLSL ES
+    // shaders) when asked for or when the driver offers no ES context.
+    bool Open(const std::string& title, bool fullscreen, std::string* error, bool desktop_gl = false);
+    bool desktop_gl() const { return desktop_gl_; }
     void Close();
     SDL_Window* sdl() const { return window_; }
     void ToggleFullscreen();
@@ -38,6 +41,7 @@ private:
     void SetupImGui();
     SDL_Window* window_ = nullptr;
     SDL_GLContext gl_ = nullptr;
+    bool desktop_gl_ = false;
     float scale_ = 1.0f;
     Fonts fonts_;
 };

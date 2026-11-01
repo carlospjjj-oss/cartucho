@@ -3,9 +3,11 @@
 // each game as a new process).
 #include <SDL.h>
 
+#include <cstdio>
 #include <cstring>
 #include <string>
 
+#include "cloud.h"
 #include "game.h"
 #include "library_app.h"
 #include "paths.h"
@@ -23,6 +25,15 @@ int main(int argc, char** argv) {
     // Extra controller layouts next to the program (gamecontrollerdb.txt).
     SDL_GameControllerAddMappingsFromFile(JoinPath(Paths::Get().assets, "gamecontrollerdb.txt").c_str());
 
+    // Backups from the command line: --export-backup <zip>, --import-backup <zip>.
+    if (argc == 3 && (std::strcmp(argv[1], "--export-backup") == 0 || std::strcmp(argv[1], "--import-backup") == 0)) {
+        const bool exp = std::strcmp(argv[1], "--export-backup") == 0;
+        const Backup::Result r = exp ? Backup::Export(argv[2], false) : Backup::Restore(argv[2]);
+        std::printf("%s\n", r.message.c_str());
+        SDL_Quit();
+        return r.ok ? 0 : 1;
+    }
+
     GameArgs game;
     bool play = false;
     for (int i = 1; i < argc; i++) {
@@ -33,6 +44,7 @@ int main(int argc, char** argv) {
         else if (a == "--save-name") game.save_name = next();
         else if (a == "--title") game.title = next();
         else if (a == "--no-resume") game.resume = false;
+        else if (a == "--entry") game.entry = next();
     }
     int rc;
     if (play) {

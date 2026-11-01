@@ -747,7 +747,9 @@ bool CoreHost::Environment(unsigned cmd, void* data) {
             const bool gles = cb->context_type == RETRO_HW_CONTEXT_OPENGLES2 ||
                               cb->context_type == RETRO_HW_CONTEXT_OPENGLES3 ||
                               cb->context_type == RETRO_HW_CONTEXT_OPENGLES_VERSION;
-            if (!gles || !hw_hooks_.current_framebuffer) {
+            const bool gl = desktop_gl_ && (cb->context_type == RETRO_HW_CONTEXT_OPENGL ||
+                                             cb->context_type == RETRO_HW_CONTEXT_OPENGL_CORE);
+            if ((!gles && !gl) || !hw_hooks_.current_framebuffer) {
                 PlatformLog(RETRO_LOG_WARN, "Core asked for a hardware context we do not offer");
                 return false;
             }

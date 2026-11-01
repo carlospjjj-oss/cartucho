@@ -10,6 +10,8 @@
 #include <cmath>
 #include <ctime>
 
+#include "achievements.h"
+#include "game_ui_impl.h"
 #include "gfx.h"
 #include "paths.h"
 #include "platform.h"
@@ -38,23 +40,27 @@ ImU32 Mix(uint32_t a, uint32_t b, float t, int alpha = 255) {
     return IM_COL32(ch(16), ch(8), ch(0), alpha);
 }
 
-const char* kFilters[] = {"Nítido", "Suave", "Nítido suave", "Tela LCD", "Linhas de TV", "Bordas arredondadas 2x",
-                          "Bordas arredondadas 3x", "TV de tubo (CRT)", "TV de tubo curva", "TV antiga (cabo composto)"};
-const char* kBezels[] = {"Sem moldura", "Automática (do console)", "Portátil", "TV de tubo", "Fliperama"};
-const char* kBezelKeys[] = {"off", "auto", "handheld", "tv", "arcade"};
-
 }  // namespace
 
-struct GameUi::Impl {
-    Texture photo;                 // the console, for the frame's side
-    Texture slot_pics[7];          // 0 = quick slot, 1..6
-    bool slot_used[7] = {};
-    std::string slot_label[7];
-    double started = Now();
-    int64_t play_ms_counted = 0;
-};
+std::string PlainText(const std::string& s) {
+    std::string out;
+    for (size_t i = 0; i < s.size();) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        const size_t n = c < 0x80 ? 1 : (c >> 5) == 6 ? 2 : (c >> 4) == 14 ? 3 : 4;
+        uint32_t cp = n == 1 ? c : n == 2 ? (c & 31) : n == 3 ? (c & 15) : (c & 7);
+        for (size_t k = 1; k < n && i + k < s.size(); k++) cp = (cp << 6) | (static_cast<unsigned char>(s[i + k]) & 63);
+        // Emoji and variation selectors: not in the fonts.
+        if (!(cp >= 0x1F000 || cp == 0xFE0F || (cp >= 0x2600 && cp <= 0x27BF))) out.append(s, i, n);
+        i += n;
+    }
+    const size_t a = out.find_first_not_of(' ');
+    return a == std::string::npos ? std::string() : out.substr(a);
+}
+
 
 GameUi::GameUi(GameContext& ctx) : ctx_(ctx), impl_(std::make_unique<Impl>()) {
+    impl_->started = Now();
+    LoadCheats();
     impl_->photo = LoadTexture(JoinPath(JoinPath(Paths::Get().assets, "photos"),
                                         std::string("photo_") + ctx_.system->photo + ".png"));
 }
@@ -119,6 +125,12 @@ void GameUi::ResumeIfAny() {
 }
 
 void GameUi::OnQuit() {
+    if (impl_->writer.running()) {
+        impl_->writer.Stop();
+        ctx_.session->set_recorder(nullptr);
+    }
+    NetStop();
+    LinkStop();
     // Play time and the continue point (state and picture).
     PlayStats::AddPlayTime(ctx_.args.rom, static_cast<int64_t>((Now() - impl_->started) * 1000));
     if (Settings::Get().Bool("resume", true) && PlayStats::CanResume(ctx_.system->key) && !ctx_.session->net_guest()) {
@@ -133,24 +145,36 @@ void GameUi::OnQuit() {
 }
 
 void GameUi::Message(const std::string& text, double seconds) {
-    message_ = text;
+    message_ = PlainText(text);
     message_until_ = Now() + seconds;
 }
 
 bool GameUi::HandleEvent(const SDL_Event& e) {
     if (!menu_open())
         return false;
-    // Back / B / Escape: one level up.
-    const bool back = (e.type == SDL_KEYDOWN && (e.key.keysym.sym == SDLK_ESCAPE || e.key.keysym.sym == SDLK_BACKSPACE)) ||
+    // Back / B / Escape: one level up (Backspace edits text while typing).
+    const bool typing = ImGui::GetIO().WantTextInput;
+    const bool back = (e.type == SDL_KEYDOWN && (e.key.keysym.sym == SDLK_ESCAPE || (e.key.keysym.sym == SDLK_BACKSPACE && !typing))) ||
                       (e.type == SDL_CONTROLLERBUTTONDOWN && e.cbutton.button == SDL_CONTROLLER_BUTTON_B) ||
                       (e.type == SDL_CONTROLLERBUTTONDOWN && e.cbutton.button == SDL_CONTROLLER_BUTTON_GUIDE);
     if (back && Now() - opened_at_ > 0.15) {
-        if (menu_ == Menu::kMain || e.cbutton.button == SDL_CONTROLLER_BUTTON_GUIDE)
+        const bool guide = e.type == SDL_CONTROLLERBUTTONDOWN && e.cbutton.button == SDL_CONTROLLER_BUTTON_GUIDE;
+        if (menu_ == Menu::kMain || guide) {
             CloseMenu();
-        else
-            OpenMenu(Menu::kMain);
+            return true;
+        }
+        switch (menu_) {
+            case Menu::kOptionPick: OpenMenu(Menu::kOptions); break;
+            case Menu::kCheatAdd: case Menu::kCheatSources: case Menu::kCheatPick: OpenMenu(Menu::kCheats); break;
+            case Menu::kOnlineRooms: OpenMenu(Menu::kOnline); break;
+            case Menu::kLinkType: case Menu::kLinkPlayers: case Menu::kLinkRooms: OpenMenu(Menu::kLink); break;
+            case Menu::kAddress: OpenMenu(impl_->address_for_link ? Menu::kLink : Menu::kOnline); break;
+            default: OpenMenu(Menu::kMain); break;
+        }
         return true;
     }
+    if (typing)
+        return true;
     // Arrows / D-pad / Enter / A drive the menu.
     if (e.type == SDL_KEYDOWN) {
         switch (e.key.keysym.sym) {
@@ -294,6 +318,12 @@ void GameUi::OpenMenu(Menu m) {
             }
         }
     }
+    if (m != Menu::kOnlineRooms && m != Menu::kLinkRooms)
+        impl_->browser.reset();
+    if ((m == Menu::kOnlineRooms || m == Menu::kLinkRooms) && !impl_->browser)
+        impl_->browser = std::make_unique<Discovery::Browser>();
+    if (m == Menu::kCheats)
+        LoadCheats();
     menu_ = m;
     opened_at_ = Now();
     focus_ = 1;   // focus the menu window on its first frame
@@ -304,11 +334,13 @@ void GameUi::OpenMenu(Menu m) {
 }
 
 void GameUi::CloseMenu() {
+    impl_->browser.reset();
     menu_ = Menu::kNone;
     ctx_.session->set_paused(false);
 }
 
 void GameUi::Draw() {
+    Poll();
     DrawBezel();
     if (menu_ != Menu::kNone)
         DrawMenu();
@@ -319,6 +351,8 @@ void GameUi::DrawOsd() {
     ImDrawList* dl = ImGui::GetForegroundDrawList();
     const ImVec2 ds = ImGui::GetIO().DisplaySize;
     const float s = ctx_.window->scale();
+    ImGui::PushFont(ctx_.window->fonts().body);
+    // Top centre: messages, speed, frame rate.
     std::string text;
     if (Now() < message_until_)
         text = message_;
@@ -326,14 +360,63 @@ void GameUi::DrawOsd() {
         text = "» " + ctx_.settings->Str("ff_speed", "3") + "x";
     else if (Settings::Get().Bool("show_fps", false))
         text = std::to_string(static_cast<int>(ctx_.session->measured_fps() + 0.5)) + " FPS";
-    if (text.empty())
-        return;
-    ImGui::PushFont(ctx_.window->fonts().body);
-    const ImVec2 ts = ImGui::CalcTextSize(text.c_str());
-    const ImVec2 pos((ds.x - ts.x) / 2, 24 * s);
-    dl->AddRectFilled(ImVec2(pos.x - 18 * s, pos.y - 10 * s), ImVec2(pos.x + ts.x + 18 * s, pos.y + ts.y + 10 * s),
-                      IM_COL32(15, 13, 26, 210), 20 * s);
-    dl->AddText(pos, IM_COL32(255, 255, 255, 255), text.c_str());
+    if (!text.empty()) {
+        const float max_w = ds.x * 0.8f;
+        const ImVec2 ts = ImGui::CalcTextSize(text.c_str(), nullptr, false, max_w);
+        const ImVec2 pos((ds.x - ts.x) / 2, 24 * s);
+        dl->AddRectFilled(ImVec2(pos.x - 18 * s, pos.y - 10 * s), ImVec2(pos.x + ts.x + 18 * s, pos.y + ts.y + 10 * s),
+                          IM_COL32(15, 13, 26, 210), 20 * s);
+        dl->AddText(nullptr, 0, pos, IM_COL32(255, 255, 255, 255), text.c_str(), nullptr, max_w);
+    }
+    ImGui::PopFont();
+    // Top right: online play, link, recording.
+    std::vector<std::pair<std::string, ImU32>> tags;
+    auto& net = ctx_.session->net();
+    if (impl_->writer.running())
+        tags.push_back({"● REC", IM_COL32(255, 70, 80, 255)});
+    if (net.playing())
+        tags.push_back({net.waiting() ? "Online: esperando o outro jogador…"
+                                      : "Online · J" + std::to_string(net.local_player() + 1) + " · " +
+                                            (net.rtt_ms() >= 0 ? std::to_string(net.rtt_ms()) + " ms" : "…"),
+                        IM_COL32(120, 220, 255, 255)});
+    if (ctx_.session->link_state() == 0)
+        tags.push_back({"Link conectado", IM_COL32(140, 255, 160, 255)});
+    // Waiting for the other player: what to do, until connected.
+    std::string wait;
+    if (impl_->waiting == 1 && net.active() && !net.playing()) {
+        wait = impl_->wait_intro;
+        const std::string m = net.message();
+        if (!m.empty()) wait += "\n" + m;
+    } else if (impl_->waiting == 2 && ctx_.session->link_state() == 2) {
+        wait = impl_->wait_intro;
+        const std::string m = ctx_.session->link_message();
+        if (!m.empty()) wait += "\n" + m;
+    }
+    if (!wait.empty()) {
+        std::lock_guard<std::mutex> lock(impl_->pub_mutex);
+        if (impl_->internet && !impl_->public_ip.empty()) wait += "\nSeu endereço na internet: " + impl_->public_ip;
+        wait += "\n(Menu → " + std::string(impl_->waiting == 1 ? "Jogar online" : "Link cable") + " para cancelar)";
+    }
+    ImGui::PushFont(ctx_.window->fonts().small);
+    float y = 20 * s;
+    for (const auto& [t, color] : tags) {
+        const ImVec2 ts = ImGui::CalcTextSize(t.c_str());
+        const ImVec2 pos(ds.x - ts.x - 28 * s, y);
+        dl->AddRectFilled(ImVec2(pos.x - 12 * s, pos.y - 6 * s), ImVec2(pos.x + ts.x + 12 * s, pos.y + ts.y + 6 * s),
+                          IM_COL32(15, 13, 26, 200), 14 * s);
+        dl->AddText(pos, color, t.c_str());
+        y += ts.y + 18 * s;
+    }
+    if (!wait.empty()) {
+        const float w = std::min(ds.x * 0.42f, 560 * s);
+        const ImVec2 ts = ImGui::CalcTextSize(wait.c_str(), nullptr, false, w);
+        const ImVec2 pos(ds.x - w - 28 * s, y + 6 * s);
+        dl->AddRectFilled(ImVec2(pos.x - 16 * s, pos.y - 12 * s), ImVec2(pos.x + w + 16 * s, pos.y + ts.y + 12 * s),
+                          IM_COL32(18, 16, 30, 225), 16 * s);
+        dl->AddRect(ImVec2(pos.x - 16 * s, pos.y - 12 * s), ImVec2(pos.x + w + 16 * s, pos.y + ts.y + 12 * s),
+                    IM_COL32(124, 92, 255, 200), 16 * s, 0, 2);
+        dl->AddText(nullptr, 0, pos, IM_COL32(235, 232, 250, 255), wait.c_str(), nullptr, w);
+    }
     ImGui::PopFont();
 }
 
@@ -431,6 +514,8 @@ void GameUi::DrawMenu() {
         DrawSlots(menu_ == Menu::kSave);
         return;
     }
+    if (DrawPanel())
+        return;
     const float width = std::min(420.0f * s, ds.x * 0.9f);
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImVec2(width, ds.y));
@@ -451,92 +536,89 @@ void GameUi::DrawMenu() {
     ImGui::PopFont();
     ImGui::Spacing();
 
-    struct Item { std::string label, value; std::function<void()> act; };
-    std::vector<Item> items;
-    auto add = [&](std::string l, std::string v, std::function<void()> f) { items.push_back({std::move(l), std::move(v), std::move(f)}); };
-    if (menu_ == Menu::kMain) {
-        add("Continuar", "", [&] { CloseMenu(); });
-        add("Salvar estado", "6 slots", [&] { OpenMenu(Menu::kSave); });
-        add("Carregar estado", "", [&] {
-            if (ctx_.session->net().active()) Message("Carregar estados fica desligado no jogo online");
-            else OpenMenu(Menu::kLoad);
-        });
-        add("Acelerar", ctx_.settings->Str("ff_speed", "3") + "x", [&] { CloseMenu(); SetFastForward(true); });
-        const int f = std::atoi(ctx_.settings->Str("filter", "2").c_str());
-        add("Filtro de imagem", (f >= 0 && f < 10) ? kFilters[f] : "", [&] { OpenMenu(Menu::kFilter); });
-        if (ctx_.system->id != Sys::NDS && ctx_.system->id != Sys::N3DS) {
-            const std::string b = ctx_.settings->Str("bezel", "auto");
-            std::string bn = kBezels[1];
-            for (int i = 0; i < 5; i++) if (b == kBezelKeys[i]) bn = kBezels[i];
-            add("Moldura", bn, [&] { OpenMenu(Menu::kBezel); });
-        }
-        add("Tela cheia", ctx_.window->fullscreen() ? "ligada" : "desligada", [&] {
-            ctx_.window->ToggleFullscreen();
-            Settings::Get().Set("fullscreen", ctx_.window->fullscreen());
-        });
-        add("Captura de tela", "F12", [&] { TakeScreenshot(); });
-        add("Reiniciar o jogo", "", [&] { ctx_.session->host().Reset(); CloseMenu(); Message("Jogo reiniciado"); });
-        add("Sair do jogo", "", [&] { quit_ = true; });
-    } else if (menu_ == Menu::kFilter) {
-        for (int i = 0; i < 10; i++)
-            add(kFilters[i], std::to_string(i) == ctx_.settings->Str("filter", "2") ? "✓" : "", [this, i] {
-                if (ctx_.settings->Has("filter")) ctx_.settings->Set("filter", std::to_string(i));
-                else Settings::Get().Set("filter", std::to_string(i));
-                ApplyDisplay();
-                OpenMenu(Menu::kMain);
-            });
-    } else if (menu_ == Menu::kBezel) {
-        for (int i = 0; i < 5; i++)
-            add(kBezels[i], ctx_.settings->Str("bezel", "auto") == kBezelKeys[i] ? "✓" : "", [this, i] {
-                if (ctx_.settings->Has("bezel")) ctx_.settings->Set("bezel", kBezelKeys[i]);
-                else Settings::Get().Set("bezel", std::string(kBezelKeys[i]));
-                OpenMenu(Menu::kMain);
-            });
+    const std::string sub = MenuTitle();
+    if (!sub.empty()) {
+        ImGui::PushFont(ctx_.window->fonts().bold);
+        ImGui::TextWrapped("%s", sub.c_str());
+        ImGui::PopFont();
+        ImGui::Spacing();
     }
 
+    std::vector<MenuItem> items;
+    BuildItems(&items);
     const float row = 50 * s;
     const int n = static_cast<int>(items.size());
-    if (n > 0) sel_ = ((sel_ + move_) % n + n) % n;   // wraps around
+    // Moves skip the lines of text; wraps around.
+    auto selectable = [&](int i) { return i >= 0 && i < n && items[static_cast<size_t>(i)].act != nullptr; };
+    if (n > 0) {
+        sel_ = std::clamp(sel_, 0, n - 1);
+        const int step = move_ < 0 ? -1 : 1;
+        int moves = move_ != 0 ? 1 : 0;
+        for (int tries = 0; tries <= n && (moves > 0 || !selectable(sel_)); tries++) {
+            sel_ = ((sel_ + step) % n + n) % n;
+            if (selectable(sel_)) moves--;
+        }
+    }
     const bool moved = move_ != 0;
     move_ = move_x_ = 0;
     int run = activate_ ? sel_ : -1;
     activate_ = false;
+    const Menu before = menu_;
     for (size_t i = 0; i < items.size(); i++) {
         ImGui::PushID(static_cast<int>(i));
         const ImVec2 p = ImGui::GetCursorScreenPos();
         const float w = ImGui::GetContentRegionAvail().x;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        if (!items[i].act) {
+            // A line of text.
+            ImGui::PushFont(ctx_.window->fonts().small);
+            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(190, 186, 214, 235));
+            ImGui::Indent(16 * s);
+            ImGui::TextWrapped("%s", items[i].label.c_str());
+            ImGui::Unindent(16 * s);
+            ImGui::PopStyleColor();
+            ImGui::PopFont();
+            ImGui::Spacing();
+            ImGui::PopID();
+            continue;
+        }
         const bool clicked = ImGui::InvisibleButton("##item", ImVec2(w, row));
         if (ImGui::IsItemHovered() && ImGui::GetIO().MouseDelta.x * ImGui::GetIO().MouseDelta.x + ImGui::GetIO().MouseDelta.y * ImGui::GetIO().MouseDelta.y > 0)
             sel_ = static_cast<int>(i);
         if (static_cast<int>(i) == sel_ && (moved || menu_frames_ <= 1))
             ImGui::SetScrollHereY();
         const bool focused = static_cast<int>(i) == sel_;
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        if (focused)
+        if (focused) {
             dl->AddRectFilledMultiColor(p, ImVec2(p.x + w, p.y + row), IM_COL32(124, 92, 255, 255), IM_COL32(90, 63, 224, 255),
                                         IM_COL32(90, 63, 224, 255), IM_COL32(124, 92, 255, 255));
-        if (focused)
             dl->AddRect(p, ImVec2(p.x + w, p.y + row), IM_COL32(124, 92, 255, 255), 12 * s, 0, 2);
-        ImGui::PushFont(focused ? ctx_.window->fonts().bold : ctx_.window->fonts().body);
-        const float ty = p.y + (row - ImGui::GetFontSize()) / 2;
-        dl->AddText(ImVec2(p.x + 16 * s, ty), focused ? IM_COL32(255, 255, 255, 255) : IM_COL32(217, 213, 238, 235), items[i].label.c_str());
-        ImGui::PopFont();
+        }
+        float value_w = 0;
         if (!items[i].value.empty()) {
             ImGui::PushFont(ctx_.window->fonts().small);
             const ImVec2 vs = ImGui::CalcTextSize(items[i].value.c_str());
+            value_w = vs.x + 24 * s;
             dl->AddText(ImVec2(p.x + w - vs.x - 16 * s, p.y + (row - vs.y) / 2), IM_COL32(200, 196, 225, 220), items[i].value.c_str());
             ImGui::PopFont();
         }
+        ImGui::PushFont(focused ? ctx_.window->fonts().bold : ctx_.window->fonts().body);
+        const float ty = p.y + (row - ImGui::GetFontSize()) / 2;
+        dl->PushClipRect(p, ImVec2(p.x + w - value_w, p.y + row), true);
+        dl->AddText(ImVec2(p.x + 16 * s, ty), focused ? IM_COL32(255, 255, 255, 255) : IM_COL32(217, 213, 238, 235), items[i].label.c_str());
+        dl->PopClipRect();
+        ImGui::PopFont();
         ImGui::PopID();
         if (clicked)
             run = static_cast<int>(i);
     }
-    if (run >= 0 && run < n)
+    if (selectable(run))
         items[static_cast<size_t>(run)].act();
-    ImGui::PushFont(ctx_.window->fonts().small);
-    ImGui::SetCursorPosY(ds.y - 40 * s);
-    ImGui::TextDisabled(menu_ == Menu::kMain ? "Esc / B: voltar ao jogo" : "Esc / B: voltar");
-    ImGui::PopFont();
+    if (menu_ == before) {
+        ImGui::PushFont(ctx_.window->fonts().small);
+        ImGui::Spacing();
+        ImGui::TextDisabled(menu_ == Menu::kMain ? "Esc / B: voltar ao jogo" : "Esc / B: voltar");
+        ImGui::PopFont();
+    }
     ImGui::End();
 }
 

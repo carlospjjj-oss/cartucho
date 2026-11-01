@@ -27,7 +27,31 @@ Seus saves ficam em %APPDATA%\Cartucho. Para deixar tudo na própria pasta
 (pendrive), crie um arquivo vazio chamado portable.txt ao lado do
 Cartucho.exe.
 
-Os saves (pastas saves e states) são os mesmos do Cartucho de celular:
-dá para continuar o jogo de um no outro.
+Jogos em .zip e .7z abrem direto (o jogo é extraído na primeira vez).
+
+PC e celular juntos
+  Saves na nuvem .... Configurações → Contas e nuvem: escolha um arquivo
+                      numa pasta do Google Drive/OneDrive/Dropbox. No
+                      celular, escolha o mesmo arquivo em Configurações →
+                      Saves na nuvem. Depois de jogar, os saves vão para
+                      esse arquivo; para trazer os do outro aparelho, use
+                      "Baixar da nuvem".
+  Jogar online ...... Menu do jogo → Jogar online. Um cria a sala e o
+                      outro entra (mesmo Wi-Fi, ou pela internet com
+                      Tailscale/ZeroTier). PC com celular funciona.
+  Link cable ........ Game Boy e GBA: Menu do jogo → Link cable, para
+                      trocar e batalhar (Pokémon etc.) com outro PC ou
+                      celular.
+  Conquistas ........ Configurações → Contas e nuvem → RetroAchievements.
+
+No menu do jogo também: trapaças (prontas ou digitadas), opções só deste
+jogo, gravar vídeo (vai para a pasta Vídeos\Cartucho), trocar disco do
+PlayStation e o jeito das telas do DS e 3DS.
+
+Atualizações: o Cartucho avisa quando sai versão nova; Configurações →
+Sobre → Atualizar agora.
+
+Na primeira vez que o Windows perguntar, deixe o Cartucho usar a rede
+(privada) para achar o outro aparelho no Wi-Fi.
 
 Mais em https://github.com/carlospjjj-oss/cartucho

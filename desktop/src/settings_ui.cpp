@@ -3,8 +3,12 @@
 #include <imgui.h>
 
 #include <cstdlib>
+#include <cstring>
+#include <ctime>
 
+#include "cloud.h"
 #include "library.h"
+#include "ra.h"
 #include "os.h"
 #include "paths.h"
 #include "settings.h"
@@ -55,6 +59,15 @@ void Combo(const char* label, const char* key, const char* def, const char* cons
             if (ImGui::Selectable(names[i], i == at)) Settings::Get().Set(key, std::string(keys[i]));
         ImGui::EndCombo();
     }
+}
+
+// Tests: CARTUCHO_SETTINGS_TAB opens that tab first.
+ImGuiTabItemFlags TabFlags(const char* name) {
+    static int frames = 0;
+    static const char* want = std::getenv("CARTUCHO_SETTINGS_TAB");
+    if (!want || frames > 30) return 0;
+    if (std::strcmp(name, "Sobre") == 0) frames++;
+    return std::strcmp(want, name) == 0 ? ImGuiTabItemFlags_SetSelected : 0;
 }
 
 const char* KeyName(SDL_Scancode sc) {
@@ -145,7 +158,7 @@ bool SettingsUi::Draw(Window& win, Sounds& sounds) {
     if (ImGui::Button("  Fechar  ")) open_ = false;
     ImGui::Spacing();
     if (ImGui::BeginTabBar("##tabs")) {
-        if (ImGui::BeginTabItem("Geral")) {
+        if (ImGui::BeginTabItem("Geral", nullptr, TabFlags("Geral"))) {
             ImGui::BeginChild("##g");
             ImGui::SeparatorText("Tela inicial");
             Check("Sons da interface", "ui_sounds", true);
@@ -170,7 +183,7 @@ bool SettingsUi::Draw(Window& win, Sounds& sounds) {
             ImGui::EndChild();
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Jogo")) {
+        if (ImGui::BeginTabItem("Jogo", nullptr, TabFlags("Jogo"))) {
             ImGui::BeginChild("##j");
             ImGui::SeparatorText("Imagem");
             const char* fkeys[] = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"};
@@ -187,7 +200,7 @@ bool SettingsUi::Draw(Window& win, Sounds& sounds) {
             ImGui::EndChild();
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Controles")) {
+        if (ImGui::BeginTabItem("Controles", nullptr, TabFlags("Controles"))) {
             ImGui::BeginChild("##c");
             if (binding_ != -999) {
                 ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 181, 71, 255));
@@ -238,7 +251,7 @@ bool SettingsUi::Draw(Window& win, Sounds& sounds) {
             ImGui::EndChild();
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Pastas")) {
+        if (ImGui::BeginTabItem("Pastas", nullptr, TabFlags("Pastas"))) {
             ImGui::BeginChild("##p");
             ImGui::TextWrapped("O Cartucho procura jogos nestas pastas (e nas subpastas):");
             ImGui::Spacing();
@@ -268,7 +281,7 @@ bool SettingsUi::Draw(Window& win, Sounds& sounds) {
             ImGui::EndChild();
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("BIOS")) {
+        if (ImGui::BeginTabItem("BIOS", nullptr, TabFlags("BIOS"))) {
             ImGui::BeginChild("##b");
             const std::string sys = JoinPath(Paths::Get().data, "system");
             ImGui::TextWrapped("O Cartucho não vem com BIOS. Se você tiver as do seu próprio console, importe aqui. "
@@ -305,8 +318,17 @@ bool SettingsUi::Draw(Window& win, Sounds& sounds) {
             ImGui::EndChild();
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Sobre")) {
+        if (ImGui::BeginTabItem("Contas e nuvem", nullptr, TabFlags("Contas e nuvem"))) {
+            ImGui::BeginChild("##acc");
+            DrawAccounts(win);
+            ImGui::EndChild();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Sobre", nullptr, TabFlags("Sobre"))) {
             ImGui::BeginChild("##s");
+            DrawUpdates();
+            ImGui::Separator();
+            ImGui::Spacing();
             ImGui::PushFont(win.fonts().bold);
             ImGui::Text("Cartucho para PC  %s", CARTUCHO_VERSION);
             ImGui::PopFont();
@@ -325,6 +347,167 @@ bool SettingsUi::Draw(Window& win, Sounds& sounds) {
     }
     ImGui::End();
     return open_;
+}
+
+SettingsUi::~SettingsUi() {
+    if (worker_.joinable()) worker_.join();
+}
+
+void SettingsUi::Run(std::function<std::string()> job) {
+    if (busy_) return;
+    if (worker_.joinable()) worker_.join();
+    busy_ = true;
+    {
+        std::lock_guard<std::mutex> lock(status_mutex_);
+        status_ = "Aguarde…";
+    }
+    worker_ = std::thread([this, job] {
+        const std::string r = job();
+        std::lock_guard<std::mutex> lock(status_mutex_);
+        status_ = r;
+        busy_ = false;
+    });
+}
+
+void SettingsUi::DrawAccounts(Window& win) {
+    {
+        std::lock_guard<std::mutex> lock(status_mutex_);
+        if (!status_.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 205, 120, 255));
+            ImGui::TextWrapped("%s", status_.c_str());
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
+        }
+    }
+    if (busy_) ImGui::BeginDisabled();
+
+    // RetroAchievements.
+    ImGui::PushFont(win.fonts().bold);
+    ImGui::TextUnformatted("RetroAchievements (conquistas)");
+    ImGui::PopFont();
+    if (RA::SignedIn()) {
+        ImGui::Text("Conectado como %s · %d pontos", RA::User().c_str(), RA::Score());
+        Check("Ganhar conquistas nos jogos", "ra_enabled", true);
+        if (ImGui::Button("Sair da conta")) RA::SignOut();
+    } else {
+        ImGui::TextWrapped("Ganhe conquistas jogando, a mesma conta do celular. Crie uma conta grátis em retroachievements.org.");
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14);
+        ImGui::InputText("Usuário", ra_user_, sizeof(ra_user_));
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14);
+        ImGui::InputText("Senha", ra_pass_, sizeof(ra_pass_), ImGuiInputTextFlags_Password);
+        if (ImGui::Button("Entrar") && ra_user_[0] && ra_pass_[0]) {
+            const std::string u = ra_user_, p = ra_pass_;
+            std::memset(ra_pass_, 0, sizeof(ra_pass_));
+            Run([u, p] {
+                const std::string e = RA::SignIn(u, p);
+                return e.empty() ? "Conectado ao RetroAchievements." : e;
+            });
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Criar conta")) OpenUrl("https://retroachievements.org/createaccount.php");
+    }
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Saves in the cloud.
+    ImGui::PushFont(win.fonts().bold);
+    ImGui::TextUnformatted("Saves na nuvem (PC e celular juntos)");
+    ImGui::PopFont();
+    ImGui::TextWrapped("Escolha um arquivo dentro de uma pasta sincronizada (Google Drive, OneDrive, Dropbox…). Depois de "
+                       "jogar, o Cartucho grava nele seus saves, estados e trapaças. No celular, escolha o mesmo arquivo em "
+                       "Configurações → Saves na nuvem.");
+    const std::string file = Cloud::File();
+    if (file.empty()) {
+        ImGui::TextDisabled("Nenhum arquivo escolhido.");
+    } else {
+        ImGui::TextWrapped("Arquivo: %s", file.c_str());
+        const int64_t last = Cloud::LastSent();
+        if (last > 0) {
+            const std::time_t t = static_cast<std::time_t>(last / 1000);
+            char buf[64];
+            std::strftime(buf, sizeof(buf), "%d/%m/%Y %H:%M", std::localtime(&t));
+            ImGui::TextDisabled("Última sincronização: %s", buf);
+        }
+    }
+    if (ImGui::Button(file.empty() ? "Escolher arquivo da nuvem" : "Trocar arquivo")) {
+        const std::string f = PickSaveFile("Arquivo de saves na nuvem", "Cartucho-saves.zip", "Backup do Cartucho", "*.zip");
+        if (!f.empty()) {
+            Cloud::SetFile(f);
+            // An existing backup there (from the phone): bring it in first.
+            if (FileSize(f) > 0)
+                Run([] {
+                    const auto r = Cloud::Fetch();
+                    return r.ok ? "Saves trazidos da nuvem. " + r.message : r.message;
+                });
+            else
+                Run([] { return Cloud::Send().message; });
+        }
+    }
+    if (!file.empty()) {
+        Check("Enviar automaticamente depois de jogar", "cloud_auto", true);
+        if (ImGui::Button("Enviar agora")) Run([] { return Cloud::Send().message; });
+        ImGui::SameLine();
+        if (ImGui::Button("Baixar da nuvem")) Run([] { return Cloud::Fetch().message; });
+        ImGui::SameLine();
+        if (ImGui::Button("Esquecer arquivo")) Cloud::SetFile("");
+    }
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Manual backup.
+    ImGui::PushFont(win.fonts().bold);
+    ImGui::TextUnformatted("Backup");
+    ImGui::PopFont();
+    ImGui::TextWrapped("Um .zip com saves, estados, trapaças e BIOS. É o mesmo formato do celular: dá para levar de um para o outro.");
+    if (ImGui::Button("Fazer backup…")) {
+        const std::string f = PickSaveFile("Salvar backup", Backup::DefaultName(), "Backup do Cartucho", "*.zip");
+        if (!f.empty())
+            Run([f] {
+                const auto r = Backup::Export(f, false);
+                return r.ok ? "Backup salvo: " + std::to_string(r.files) + " arquivos." : r.message;
+            });
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Restaurar backup…")) {
+        const std::string f = PickFile("Restaurar backup", "Backup do Cartucho", "*.zip");
+        if (!f.empty())
+            Run([f] {
+                const auto r = Backup::Restore(f);
+                return r.ok ? "Restaurado: " + std::to_string(r.files) + " arquivos." : r.message;
+            });
+    }
+    if (busy_) ImGui::EndDisabled();
+}
+
+void SettingsUi::DrawUpdates() {
+    ImGui::PushFont(ImGui::GetIO().Fonts->Fonts.Size > 2 ? ImGui::GetIO().Fonts->Fonts[2] : ImGui::GetFont());
+    ImGui::TextUnformatted("Atualizações");
+    ImGui::PopFont();
+    {
+        std::lock_guard<std::mutex> lock(status_mutex_);
+        if (!status_.empty()) ImGui::TextWrapped("%s", status_.c_str());
+    }
+    Check("Procurar atualizações ao abrir", "auto_update", true);
+    if (busy_) ImGui::BeginDisabled();
+    if (ImGui::Button("Procurar agora"))
+        Run([this] {
+            update_ = Updater::Check();
+            update_checked_ = true;
+            return update_.message;
+        });
+    if (update_checked_ && update_.newer) {
+        ImGui::SameLine();
+        if (ImGui::Button("Atualizar agora"))
+            Run([this] {
+                std::string m;
+                if (Updater::Install(update_, &m)) quit_ = true;
+                return m;
+            });
+    }
+    if (busy_) ImGui::EndDisabled();
+    ImGui::Spacing();
 }
 
 }  // namespace cartucho

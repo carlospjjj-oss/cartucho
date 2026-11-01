@@ -119,7 +119,7 @@ index 438dd01..e9571db 100644
  #include <cstdlib>
  #include <cstring>
 diff --git a/src/libretro/CMakeLists.txt b/src/libretro/CMakeLists.txt
-index e635941..f23844b 100644
+index e635941..19ffd00 100644
 --- a/src/libretro/CMakeLists.txt
 +++ b/src/libretro/CMakeLists.txt
 @@ -96,12 +96,33 @@ target_compile_definitions(vbam_libretro PRIVATE
@@ -141,7 +141,7 @@ index e635941..f23844b 100644
 +    )
 +    # The NDK has no libintl.h; elsewhere the system one is needed (libstdc++
 +    # includes it too).
-+    if(ANDROID)
++    if(ANDROID OR MINGW)
 +        target_include_directories(vbam_libretro PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/compat)
 +    endif()
 +    target_include_directories(vbam_libretro PRIVATE
@@ -157,12 +157,21 @@ index e635941..f23844b 100644
  if(COMMITHASH)
      target_compile_definitions(vbam_libretro PRIVATE
          GIT_COMMIT="${COMMITHASH}"
+@@ -456,7 +477,7 @@ elseif(MINGW)
+ 
+     # CRT and system libraries.  --start-group handles circular
+     # dependencies between mingw32/mingwex/msvcrt/gcc.
+-    set(_lr_mingw_crt_libs -lmingw32 -lmingwex -lmsvcrt -lmoldname -lpthread)
++    set(_lr_mingw_crt_libs -lmingw32 -lmingwex -lmsvcrt -lmoldname -l:libwinpthread.a)
+     if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+         # Clang's compiler-rt builtins (provides ___chkstk_ms, etc.)
+         execute_process(
 diff --git a/src/libretro/cartucho_link.cpp b/src/libretro/cartucho_link.cpp
 new file mode 100644
-index 0000000..1e19245
+index 0000000..06558bf
 --- /dev/null
 +++ b/src/libretro/cartucho_link.cpp
-@@ -0,0 +1,70 @@
+@@ -0,0 +1,76 @@
 +// Cartucho extension: lets the frontend start a network link session (cable,
 +// wireless adapter or GB serial over TCP, the same protocol as the desktop
 +// VBA-M) in the libretro core. Plain C exports, looked up with dlsym; every
@@ -172,13 +181,19 @@ index 0000000..1e19245
 +
 +#include "core/gba/gbaLink.h"
 +
++#ifdef _WIN32
++#define CARTUCHO_EXPORT __declspec(dllexport)
++#else
++#define CARTUCHO_EXPORT __attribute__((visibility("default")))
++#endif
++
 +extern "C" {
 +
 +// mode: 0 = GBA cable, 1 = GBA wireless adapter, 2 = Game Boy cable.
 +// players: total, server included (2-4; Game Boy is always 2).
 +// host: the server to join (client only). Returns a ConnectionState:
 +// 0 connected, 1 error, 2 still connecting (call cartucho_link_poll).
-+__attribute__((visibility("default")))
++CARTUCHO_EXPORT
 +int cartucho_link_start(int mode, int server, int players, const char* host, int port,
 +                        int timeout_ms) {
 +    static const LinkMode kModes[] = {LINK_CABLE_SOCKET, LINK_RFU_SOCKET, LINK_GAMEBOY_SOCKET};
@@ -203,7 +218,7 @@ index 0000000..1e19245
 +
 +// Advances a connection in progress. Writes a status line ("Waiting for
 +// clients 1/2...", "Connected as #2"...) into message. Same return values.
-+__attribute__((visibility("default")))
++CARTUCHO_EXPORT
 +int cartucho_link_poll(char* message, int size) {
 +    if (size > 0)
 +        message[0] = '\0';
@@ -211,23 +226,23 @@ index 0000000..1e19245
 +}
 +
 +// Once per frame while a session is up: notices dropped peers.
-+__attribute__((visibility("default")))
++CARTUCHO_EXPORT
 +void cartucho_link_frame() {
 +    if (GetLinkMode() != LINK_DISCONNECTED)
 +        CheckLinkConnection();
 +}
 +
-+__attribute__((visibility("default")))
++CARTUCHO_EXPORT
 +int cartucho_link_active() {
 +    return GetLinkMode() != LINK_DISCONNECTED;
 +}
 +
-+__attribute__((visibility("default")))
++CARTUCHO_EXPORT
 +int cartucho_link_player_id() {
 +    return GetLinkPlayerId();
 +}
 +
-+__attribute__((visibility("default")))
++CARTUCHO_EXPORT
 +void cartucho_link_stop() {
 +    CloseLink();
 +}

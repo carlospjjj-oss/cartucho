@@ -113,13 +113,11 @@ jobs:
           cd src
           case "${{ matrix.lib }}" in
             vbam)
-              # Its MinGW libretro link takes pthread as a DLL; take the archive.
-              sed -i 's/-lmoldname -lpthread)/-lmoldname -l:libwinpthread.a)/' src/libretro/CMakeLists.txt
-              grep -q "l:libwinpthread.a" src/libretro/CMakeLists.txt || { echo "::error::vbam: pthread line not found"; grep -n "pthread" src/libretro/CMakeLists.txt | sed 's/^/::error::/'; exit 1; }
               $L "vbam configure" cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
                 -DENABLE_LIBRETRO=ON -DENABLE_QT=OFF -DENABLE_WX=OFF -DENABLE_SDL=OFF \
                 -DBUILD_TESTING=OFF -DENABLE_VULKAN=OFF -DENABLE_LUA=OFF -DENABLE_FFMPEG=OFF \
-                -DENABLE_LINK=OFF -DENABLE_NLS=OFF -DCMAKE_SHARED_LINKER_FLAGS="-static -static-libgcc -static-libstdc++" \
+                -DENABLE_LINK=ON -DENABLE_NLS=OFF -DLIBINTL_INC="$(cygpath -m "$PWD/src/libretro/compat")" \
+                -DCMAKE_CXX_STANDARD_LIBRARIES="-lmsvcrt -lws2_32 -lwinmm -lkernel32 -luser32 -ladvapi32" -DCMAKE_SHARED_LINKER_FLAGS="-static -static-libgcc -static-libstdc++" \
                 -DCMAKE_MODULE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++" \
                 -DZLIB_LIBRARY="$(cygpath -m "$MINGW_PREFIX/lib/libz.a")"
               $L "vbam build" cmake --build build --target vbam_libretro -j 4

@@ -4,16 +4,22 @@
 #include <glad/gles2.h>
 #include <imgui.h>
 #include <imgui_impl_sdl2.h>
+#include <zlib.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <memory>
+#include <thread>
 
+#include "achievements.h"
+#include "archive.h"
 #include "audio.h"
 #include "game_ui.h"
 #include "input.h"
 #include "paths.h"
 #include "platform.h"
+#include "ra.h"
 #include "session.h"
 #include "settings.h"
 #include "systems.h"
@@ -32,9 +38,62 @@ double NowSeconds() {
     return duration<double>(steady_clock::now().time_since_epoch()).count();
 }
 
+// A game inside a .zip/.7z: extracted once (with a progress screen).
+bool Extract(Window& win, const GameArgs& args, std::string* out, std::string* error) {
+    *out = ExtractedPath(args.rom, FileSize(args.rom), args.entry);
+    if (FileSize(*out) > 0) return true;
+    std::atomic<float> progress{0};
+    std::atomic<bool> done{false};
+    bool ok = false;
+    std::thread t([&] {
+        ok = ExtractEntry(args.rom, args.entry, *out, [&](float p) { progress = p; }, error);
+        done = true;
+    });
+    while (!done) {
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) ImGui_ImplSDL2_ProcessEvent(&e);
+        win.BeginFrame();
+        const ImVec2 ds = ImGui::GetIO().DisplaySize;
+        ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), ds, IM_COL32(11, 10, 20, 255));
+        ImGui::SetNextWindowPos(ImVec2(ds.x / 2, ds.y / 2), 0, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ImVec2(std::min(ds.x - 40, 560.0f * win.scale()), 0));
+        ImGui::Begin("##extract", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove);
+        ImGui::PushFont(win.fonts().bold);
+        ImGui::TextUnformatted("Extraindo o jogo…");
+        ImGui::PopFont();
+        ImGui::TextDisabled("%s", FileName(args.entry).c_str());
+        ImGui::ProgressBar(progress, ImVec2(-1, 0));
+        ImGui::End();
+        win.EndFrame();
+        SDL_Delay(16);
+    }
+    t.join();
+    return ok;
+}
+
+// What the phone shows link partners and uses to tell games apart online:
+// the CRC of small games, else the file size (GameActivity.prepare()).
+uint32_t RomCrc(const SystemInfo& sys, const std::string& rom, bool from_archive) {
+    if (from_archive && sys.id != Sys::GB && sys.id != Sys::GBA) return 0;
+    if (sys.needs_path || sys.id == Sys::NDS) return 0;
+    const uint64_t size = FileSize(rom);
+    if (size == 0 || size > 64u * 1024 * 1024) return 0;
+    std::vector<uint8_t> bytes;
+    if (!ReadFileBytes(rom, &bytes)) return 0;
+    return static_cast<uint32_t>(crc32(0L, bytes.data(), static_cast<uInt>(bytes.size())));
+}
+
+std::string Hex(uint32_t v) {
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "%x", v);
+    return buf;
+}
+
+}  // namespace
+
 // Core options as the Android app sets them (GameActivity.applyCoreOptions).
-void ApplyCoreOptions(CoreHost& host, Sys sys, const GameSettings& gs) {
-    switch (sys) {
+void ApplyCoreOptions(CoreHost& host, const SystemInfo& sys, const GameSettings& gs) {
+    switch (sys.id) {
         case Sys::NDS:
             host.SetOption("melonds_render_mode", "software");
             host.SetOption("melonds_jit_enable", "enabled");
@@ -53,7 +112,7 @@ void ApplyCoreOptions(CoreHost& host, Sys sys, const GameSettings& gs) {
         case Sys::GB:
         case Sys::GBA: {
             const bool bios = FileExists(JoinPath(JoinPath(Paths::Get().data, "system"),
-                                                  sys == Sys::GBA ? "gba_bios.bin" : "gb_bios.bin"));
+                                                  sys.id == Sys::GBA ? "gba_bios.bin" : "gb_bios.bin"));
             host.SetOption("vbam_usebios", bios ? "enabled" : "disabled");
             const std::string lcd = gs.Str("lcd_color", "off");
             host.SetOption("vbam_lcdfilter", lcd == "off" ? "disabled" : "enabled");
@@ -77,14 +136,13 @@ void ApplyCoreOptions(CoreHost& host, Sys sys, const GameSettings& gs) {
             host.SetOption("citra_shaders_accurate_mul", "enabled");
             host.SetOption("citra_texture_filter", gs.Str("n3ds_tex_filter", "none"));
             host.SetOption("citra_is_new_3ds", "New 3DS");
+            host.SetOption("citra_swap_screen", Settings::Get().Bool("n3ds_swap", false) ? "Bottom" : "Top");
             host.SetOption("citra_layout_option", gs.Str("n3ds_layout_pc", "large_screen"));
             break;
         default:
             break;
     }
 }
-
-}  // namespace
 
 int RunGame(const GameArgs& args) {
     OpenLog("game.log");
@@ -96,9 +154,10 @@ int RunGame(const GameArgs& args) {
     Settings::Get().Load();
     GameSettings gs(sys->key, args.save_name);
 
+    // The 3DS core draws with desktop OpenGL on the PC.
     Window win;
     std::string error;
-    if (!win.Open(args.title + " — Cartucho", Settings::Get().Bool("fullscreen", true), &error)) {
+    if (!win.Open(args.title + " — Cartucho", Settings::Get().Bool("fullscreen", true), &error, sys->id == Sys::N3DS)) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Cartucho", error.c_str(), nullptr);
         return 3;
     }
@@ -117,16 +176,30 @@ int RunGame(const GameArgs& args) {
     ctx.args = args;
     ctx.settings = &gs;
     ctx.state_dir = state_dir;
+    ctx.rom = args.rom;
+    ctx.file_name = args.entry.empty() ? FileName(args.rom) : FileName(args.entry);
+    if (!args.entry.empty() && !Extract(win, args, &ctx.rom, &error)) {
+        GameUi::ShowFatal(win, error);
+        win.Close();
+        return 4;
+    }
+    // Online play: the id the phone builds (GameActivity: core library | CRC or size).
+    ctx.rom_crc = RomCrc(*sys, ctx.rom, !args.entry.empty());
+    ctx.game_id = std::string("lib") + sys->core + ".so|" + (ctx.rom_crc ? Hex(ctx.rom_crc) : std::to_string(FileSize(args.rom)));
 
     auto session = std::make_unique<Session>();
+    if (win.desktop_gl()) {
+        session->host().SetDesktopGl(true);
+        session->host().SetPreferredHwContext(RETRO_HW_CONTEXT_OPENGL_CORE);
+    }
     const std::string core = CorePath(*sys);
     if (!FileExists(core)) {
         error = "O emulador de " + std::string(sys->full_name) + " não foi encontrado (" + core + ").";
     } else if (session->Open(core, system_dir, save_dir, &error)) {
         if (sys->id == Sys::PS1 && Settings::Get().Bool("ps1_dualshock", true))
             session->host().SetPortDevice((2 << 8) | 5);
-        ApplyCoreOptions(session->host(), sys->id, gs);
-        if (session->OnSurfaceCreated(args.rom, JoinPath(save_dir, args.save_name + ".srm"), &error))
+        ApplyCoreOptions(session->host(), *sys, gs);
+        if (session->OnSurfaceCreated(ctx.rom, JoinPath(save_dir, args.save_name + ".srm"), &error))
             error.clear();
     }
     if (!error.empty()) {
@@ -136,6 +209,18 @@ int RunGame(const GameArgs& args) {
         return 4;
     }
     ctx.session = session.get();
+    if (session->run_ahead_possible())
+        session->set_run_ahead(std::atoi(gs.Str("run_ahead", "0").c_str()));
+
+    // RetroAchievements, when signed in.
+    std::unique_ptr<RA::Pump> pump;
+    const int console = RA::ConsoleId(sys->id, ctx.file_name);
+    if (RA::Enabled() && console != 0) {
+        ctx.ra = std::make_shared<Achievements>(&session->host());
+        session->set_achievements(ctx.ra);
+        ctx.ra->Start(RA::User(), Settings::Get().Str("ra_token", ""), console);
+        pump = std::make_unique<RA::Pump>(ctx.ra);
+    }
 
     Input input;
     input.Load();
@@ -147,6 +232,7 @@ int RunGame(const GameArgs& args) {
 
     GameUi ui(ctx);
     ui.ApplyDisplay();
+    ui.ApplyCheats();
     if (args.resume)
         ui.ResumeIfAny();
 
@@ -202,6 +288,9 @@ int RunGame(const GameArgs& args) {
     }
     ui.OnQuit();
     audio.Stop();
+    pump.reset();
+    session->set_achievements(nullptr);
+    ctx.ra.reset();
     session.reset();   // unloads the game, writing its save
     win.Close();
     return 0;
