@@ -1,8 +1,6 @@
 #include "core_host.h"
 
-#include <dlfcn.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#include "compat.h"
 
 #include <algorithm>
 #include <cstdarg>
@@ -112,9 +110,9 @@ bool ReadFile(const std::string& path, std::vector<uint8_t>* out) {
 bool ReadFd(int fd, std::vector<uint8_t>* out) {
     out->clear();
     uint8_t chunk[1 << 16];
-    off_t offset = 0;
+    long long offset = 0;
     for (;;) {
-        const ssize_t n = pread(fd, chunk, sizeof(chunk), offset);
+        const long long n = PRead(fd, chunk, sizeof(chunk), offset);
         if (n < 0)
             return false;
         if (n == 0)
@@ -130,7 +128,7 @@ bool ReadFd(int fd, std::vector<uint8_t>* out) {
 void MakeDirs(const std::string& dir) {
     for (size_t at = 1; at <= dir.size(); at++) {
         if (at == dir.size() || dir[at] == '/')
-            mkdir(dir.substr(0, at).c_str(), 0755);
+            MakeDir(dir.substr(0, at));
     }
 }
 
@@ -216,15 +214,14 @@ std::string CoreHost::OptionValue(const std::string& key) {
 }
 
 bool CoreHost::LoadCore(const std::string& path, std::string* error) {
-    handle_ = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    handle_ = LibOpen(path);
     if (!handle_) {
-        const char* why = dlerror();
-        *error = "Could not open core " + path + ": " + (why ? why : "unknown error");
+        *error = "Could not open core " + path + ": " + LibError();
         return false;
     }
     bool missing = false;
     auto sym = [&](const char* name) -> void* {
-        void* p = dlsym(handle_, name);
+        void* p = LibSym(handle_, name);
         if (!p) {
             missing = true;
             *error = std::string("Core is missing ") + name;
@@ -536,7 +533,7 @@ void CoreHost::FlushSaveRam() {
 }
 
 void* CoreHost::Symbol(const char* name) const {
-    return handle_ ? dlsym(handle_, name) : nullptr;
+    return handle_ ? LibSym(handle_, name) : nullptr;
 }
 
 std::string CoreHost::TakeMessage() {

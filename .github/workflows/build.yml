@@ -43,47 +43,8 @@ jobs:
           if ! gh release download cores -p '*.so' -D app/src/main/jniLibs/arm64-v8a; then
             echo "::warning title=No cores yet::Run the 'Build cores' workflow; this APK has no emulators."
           fi
-      - name: Cover name lists
-        # The names of every box art in the libretro thumbnail collection,
-        # packed into the APK so the app matches covers without calling the
-        # (rate-limited) GitHub API. Only the file list is fetched, no images.
-        run: |
-          mkdir -p app/src/main/assets/covers
-          for repo in Nintendo_-_Game_Boy Nintendo_-_Game_Boy_Color Nintendo_-_Game_Boy_Advance \
-                      Nintendo_-_Nintendo_DS Nintendo_-_Nintendo_3DS \
-                      Nintendo_-_Nintendo_Entertainment_System Nintendo_-_Super_Nintendo_Entertainment_System \
-                      Sega_-_Mega_Drive_-_Genesis Sega_-_Master_System_-_Mark_III Sega_-_Game_Gear \
-                      Sony_-_PlayStation; do
-            git clone -q --depth 1 --filter=blob:none --no-checkout \
-              "https://github.com/libretro-thumbnails/$repo.git" "thumbs-$repo"
-            # -z: names exactly as stored (no quoting of accents or quotes).
-            git -C "thumbs-$repo" ls-tree -z --name-only HEAD Named_Boxarts/ | tr '\0' '\n' \
-              | sed -n 's|^Named_Boxarts/\(.*\)\.png$|\1|p' > "app/src/main/assets/covers/$repo.txt"
-            echo "$repo: $(wc -l < "app/src/main/assets/covers/$repo.txt") names"
-          done
-      - name: Cheat name lists
-        # Names of the ready-made cheat files in the libretro database; the
-        # app downloads the one the player picks.
-        run: |
-          mkdir -p app/src/main/assets/cheats
-          git clone -q --depth 1 --filter=blob:none --no-checkout \
-            https://github.com/libretro/libretro-database.git lrdb
-          for dir in "Nintendo - Game Boy" "Nintendo - Game Boy Color" "Nintendo - Game Boy Advance" \
-                     "Nintendo - Nintendo DS" "Nintendo - Nintendo Entertainment System" \
-                     "Nintendo - Super Nintendo Entertainment System" "Sega - Mega Drive - Genesis" \
-                     "Sega - Master System - Mark III" "Sega - Game Gear" "Sony - PlayStation"; do
-            git -C lrdb ls-tree -z --name-only HEAD "cht/$dir/" | tr '\0' '\n' \
-              | sed -n 's|^cht/[^/]*/\(.*\)\.cht$|\1|p' > "app/src/main/assets/cheats/$dir.txt"
-            echo "$dir: $(wc -l < "app/src/main/assets/cheats/$dir.txt") cheat files"
-          done
-      - name: Game facts
-        # Year, genre, developer, publisher and players from the libretro
-        # database's metadat/, packed small (tools/metadata/pack.py).
-        run: |
-          for f in releaseyear genre developer publisher maxusers; do
-            git -C lrdb checkout -q HEAD -- "metadat/$f" || true
-          done
-          python3 tools/metadata/pack.py lrdb app/src/main/assets/meta
+      - name: Cover and cheat name lists, game facts
+        run: .github/scripts/assets.sh app/src/main/assets
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

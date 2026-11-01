@@ -1,0 +1,33 @@
+Cartucho para PC
+================
+
+Como usar
+1. Extraia esta pasta inteira onde quiser (por exemplo, Documentos\Cartucho).
+2. Abra Cartucho.exe.
+3. Na primeira vez, escolha a pasta dos seus jogos.
+
+Controles (teclado)
+  Setas ............. direcional
+  X / Z ............. A / B
+  S / A ............. X / Y
+  Q / W ............. L / R
+  Enter ............. Start
+  Shift direito ..... Select
+  Esc ............... menu do jogo
+  Espaço ............ acelerar
+  Backspace (segure)  voltar no tempo
+  F5 / F8 ........... salvar / carregar rápido
+  F11 ............... tela cheia
+  F12 ............... captura de tela
+
+Controles de Xbox, PlayStation e outros funcionam direto (o botão central
+abre o menu). Dá para trocar os botões em Configurações.
+
+Seus saves ficam em %APPDATA%\Cartucho. Para deixar tudo na própria pasta
+(pendrive), crie um arquivo vazio chamado portable.txt ao lado do
+Cartucho.exe.
+
+Os saves (pastas saves e states) são os mesmos do Cartucho de celular:
+dá para continuar o jogo de um no outro.
+
+Mais em https://github.com/carlospjjj-oss/cartucho

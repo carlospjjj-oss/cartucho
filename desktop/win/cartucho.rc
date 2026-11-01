@@ -1,0 +1,20 @@
+#include <winver.h>
+1 ICON "cartucho.ico"
+1 24 "cartucho.manifest"
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION 1,0,0,0
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "041604B0"
+    BEGIN
+      VALUE "FileDescription", "Cartucho - emulador de consoles"
+      VALUE "ProductName", "Cartucho"
+      VALUE "LegalCopyright", "GPL-2.0-or-later"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0416, 1200
+  END
+END

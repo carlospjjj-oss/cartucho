@@ -1,17 +1,9 @@
 #include "netplay.h"
 
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <poll.h>
-#include <sys/socket.h>
-#include <unistd.h>
-
 #include <algorithm>
-#include <cerrno>
 #include <cstring>
+
+#include "socket_compat.h"
 
 namespace cartucho {
 
@@ -39,9 +31,8 @@ bool Get(const std::vector<uint8_t>& in, size_t* at, T* v) {
 
 void NoDelay(int fd) {
     int one = 1;
-    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
-    timeval tv{0, 200 * 1000};  // reads wake up to check for Stop()
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    SockOpt(fd, IPPROTO_TCP, TCP_NODELAY, one);
+    SockRecvTimeout(fd, 200);  // reads wake up to check for Stop()
 }
 
 }  // namespace
@@ -60,20 +51,20 @@ bool Netplay::Host(int port, const std::string& game) {
         std::lock_guard<std::mutex> lock(message_mutex_);
         message_ = "Esperando o outro jogador…";
     }
-    listen_fd_ = socket(AF_INET6, SOCK_STREAM, 0);
+    listen_fd_ = SockOpen(AF_INET6, SOCK_STREAM, 0);
     bool v6 = listen_fd_ >= 0;
     if (!v6)
-        listen_fd_ = socket(AF_INET, SOCK_STREAM, 0);
+        listen_fd_ = SockOpen(AF_INET, SOCK_STREAM, 0);
     if (listen_fd_ < 0) {
         Fail(State::kFailed, "Não foi possível abrir a conexão");
         return false;
     }
     int one = 1;
-    setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    SockOpt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, one);
     int rc;
     if (v6) {
         int zero = 0;  // IPv4 and IPv6 both
-        setsockopt(listen_fd_, IPPROTO_IPV6, IPV6_V6ONLY, &zero, sizeof(zero));
+        SockOpt(listen_fd_, IPPROTO_IPV6, IPV6_V6ONLY, zero);
         sockaddr_in6 a{};
         a.sin6_family = AF_INET6;
         a.sin6_addr = in6addr_any;
@@ -87,7 +78,7 @@ bool Netplay::Host(int port, const std::string& game) {
         rc = bind(listen_fd_, reinterpret_cast<sockaddr*>(&a), sizeof(a));
     }
     if (rc != 0 || listen(listen_fd_, 1) != 0) {
-        close(listen_fd_);
+        SockClose(listen_fd_);
         listen_fd_ = -1;
         Fail(State::kFailed, "A porta " + std::to_string(port) + " está ocupada");
         return false;
@@ -123,16 +114,16 @@ void Netplay::Stop() {
         stop_ = true;
         const int fd = fd_.load();
         if (fd >= 0)
-            shutdown(fd, SHUT_RDWR);
+            SockShutdown(fd);
         thread_.join();
     }
     if (listen_fd_ >= 0) {
-        close(listen_fd_);
+        SockClose(listen_fd_);
         listen_fd_ = -1;
     }
     const int fd = fd_.exchange(-1);
     if (fd >= 0)
-        close(fd);
+        SockClose(fd);
     {
         std::lock_guard<std::mutex> lock(queue_mutex_);
         queue_.clear();
@@ -170,9 +161,9 @@ void Netplay::NetThread(std::string host, int port) {
     if (host_) {
         // Wait for the guest.
         while (!stop_) {
-            pollfd p{listen_fd_, POLLIN, 0};
-            if (poll(&p, 1, 200) > 0) {
-                fd = accept(listen_fd_, nullptr, nullptr);
+            pollfd p{static_cast<decltype(pollfd::fd)>(listen_fd_), POLLIN, 0};
+            if (SockPoll(&p, 1, 200) > 0) {
+                fd = SockAccept(listen_fd_);
                 if (fd >= 0)
                     break;
             }
@@ -180,7 +171,7 @@ void Netplay::NetThread(std::string host, int port) {
         if (fd < 0)
             return;
         // One guest per session.
-        close(listen_fd_);
+        SockClose(listen_fd_);
         listen_fd_ = -1;
     } else {
         addrinfo hints{};
@@ -192,27 +183,27 @@ void Netplay::NetThread(std::string host, int port) {
             return;
         }
         for (addrinfo* a = res; a && fd < 0 && !stop_; a = a->ai_next) {
-            int s = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
+            int s = SockOpen(a->ai_family, a->ai_socktype, a->ai_protocol);
             if (s < 0)
                 continue;
-            fcntl(s, F_SETFL, fcntl(s, F_GETFL) | O_NONBLOCK);
-            int rc = connect(s, a->ai_addr, a->ai_addrlen);
-            if (rc != 0 && errno == EINPROGRESS) {
-                pollfd p{s, POLLOUT, 0};
+            SockNonBlocking(s, true);
+            int rc = connect(s, a->ai_addr, static_cast<int>(a->ai_addrlen));
+            if (rc != 0 && SockInProgress(SockError())) {
+                pollfd p{static_cast<decltype(pollfd::fd)>(s), POLLOUT, 0};
                 for (int i = 0; i < 50 && !stop_; i++) {  // 10 s
-                    rc = poll(&p, 1, 200);
+                    rc = SockPoll(&p, 1, 200);
                     if (rc != 0)
                         break;
                 }
                 int err = 0;
                 socklen_t len = sizeof(err);
-                rc = (rc > 0 && getsockopt(s, SOL_SOCKET, SO_ERROR, &err, &len) == 0 && err == 0) ? 0 : -1;
+                rc = (rc > 0 && getsockopt(s, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&err), &len) == 0 && err == 0) ? 0 : -1;
             }
             if (rc == 0) {
-                fcntl(s, F_SETFL, fcntl(s, F_GETFL) & ~O_NONBLOCK);
+                SockNonBlocking(s, false);
                 fd = s;
             } else {
-                close(s);
+                SockClose(s);
             }
         }
         freeaddrinfo(res);
@@ -249,12 +240,12 @@ bool Netplay::ReadLoop(int fd) {
         while (got < size) {
             if (stop_)
                 return false;
-            const ssize_t n = recv(fd, p + got, size - got, 0);
+            const long long n = SockRecv(fd, p + got, size - got);
             if (n > 0) {
                 got += static_cast<size_t>(n);
             } else if (n == 0) {
                 return false;
-            } else if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+            } else if (!SockRetry(SockError())) {
                 return false;
             }
         }
@@ -290,9 +281,9 @@ void Netplay::Send(uint8_t type, const void* data, size_t size) {
     std::lock_guard<std::mutex> lock(send_mutex_);
     size_t sent = 0;
     while (sent < buf.size()) {
-        const ssize_t n = send(fd, buf.data() + sent, buf.size() - sent, MSG_NOSIGNAL);
+        const long long n = SockSend(fd, buf.data() + sent, buf.size() - sent);
         if (n <= 0) {
-            if (n < 0 && errno == EINTR)
+            if (n < 0 && SockRetry(SockError()))
                 continue;
             return;  // the reader notices the broken connection
         }
