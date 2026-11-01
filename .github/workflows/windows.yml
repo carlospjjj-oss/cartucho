@@ -107,6 +107,7 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           set -e
+          trap 'echo "::error::core build stopped at line $LINENO: $BASH_COMMAND"' ERR
           mkdir -p out
           L=$PWD/.github/scripts/logged.sh
           cd src
@@ -114,7 +115,7 @@ jobs:
             vbam)
               # Its MinGW libretro link takes pthread as a DLL; take the archive.
               sed -i 's/-lmoldname -lpthread)/-lmoldname -l:libwinpthread.a)/' src/libretro/CMakeLists.txt
-              grep -q "l:libwinpthread.a" src/libretro/CMakeLists.txt
+              grep -q "l:libwinpthread.a" src/libretro/CMakeLists.txt || { echo "::error::vbam: pthread line not found"; grep -n "pthread" src/libretro/CMakeLists.txt | sed 's/^/::error::/'; exit 1; }
               $L "vbam configure" cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
                 -DENABLE_LIBRETRO=ON -DENABLE_QT=OFF -DENABLE_WX=OFF -DENABLE_SDL=OFF \
                 -DBUILD_TESTING=OFF -DENABLE_VULKAN=OFF -DENABLE_LUA=OFF -DENABLE_FFMPEG=OFF \
@@ -131,8 +132,8 @@ jobs:
             azahar)
               # MinGW: the libretro branch uses struct _stat64 but plain fstat.
               sed -i 's/^#elif defined(HAVE_LIBRETRO)$/&\n#define fstat _fstat64/' src/common/file_util.cpp
-              [ "$(grep -c "define fstat _fstat64" src/common/file_util.cpp)" -ge 2 ]
-              $L "azahar configure" env CXXFLAGS="-include cstdlib -include cstring -include cstdint" cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_LIBRETRO=ON -DCITRA_USE_PRECOMPILED_HEADERS=OFF \
+              [ "$(grep -c "define fstat _fstat64" src/common/file_util.cpp)" -ge 2 ] || { echo "::error::azahar: fstat line not found"; exit 1; }
+              $L "azahar configure" env CXXFLAGS="$(for h in cstdlib cstring cstdint vector string array algorithm memory utility optional functional limits stdexcept map; do printf -- '-include %s ' $h; done)" cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_LIBRETRO=ON -DCITRA_USE_PRECOMPILED_HEADERS=OFF \
                 -DENABLE_QT=OFF -DENABLE_SDL2=OFF -DENABLE_TESTS=OFF -DENABLE_ROOM=OFF -DENABLE_WEB_SERVICE=OFF \
                 -DCMAKE_SHARED_LINKER_FLAGS="-static" \
                 -DCMAKE_C_FLAGS="-include $(cygpath -m "$PWD/../.github/patches/endian-compat.h")"
