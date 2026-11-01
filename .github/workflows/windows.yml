@@ -148,7 +148,9 @@ jobs:
           esac
           strip -s ../out/*.dll
           # Only Windows' own DLLs may be needed: nothing from MinGW.
-          bad=$(objdump -p ../out/*.dll | grep -ioE "DLL Name: (libwinpthread|libgcc|libstdc|libc\+\+|libunwind|zlib|libz)[^ ]*" | sort -u | tr '\n' ' ')
+          objdump -p ../out/*.dll > ../deps.txt || echo "::warning::objdump status $?"
+          grep "DLL Name" ../deps.txt | sed 's/^/::notice::/' || true
+          bad=$(grep -ioE "DLL Name: (libwinpthread|libgcc|libstdc|libc\+\+|libunwind|zlib|libz)[^ ]*" ../deps.txt | sort -u | tr '\n' ' ' || true)
           if [ -n "$bad" ]; then echo "::error::the core needs a MinGW DLL: $bad"; exit 1; fi
       - uses: actions/upload-artifact@v4
         with:
