@@ -12,8 +12,8 @@
 #include <windows.h>
 #include <shobjidl.h>
 #include <shellapi.h>
-#include <SDL_syswm.h>
 #include <functional>
+#include <atomic>
 #include <thread>
 #include <shlobj.h>
 #include <knownfolders.h>
@@ -37,27 +37,32 @@ std::wstring W(const std::string& s) {
     MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
     return w;
 }
-// The window the dialogs belong to (so they open in front of it).
-HWND Owner() {
-    SDL_Window* w = SDL_GL_GetCurrentWindow();
-    SDL_SysWMinfo info;
-    SDL_VERSION(&info.version);
-    if (w && SDL_GetWindowWMInfo(w, &info) && info.subsystem == SDL_SYSWM_WINDOWS) return info.info.win.window;
-    return nullptr;
-}
-
 // The file dialogs need a single-threaded COM apartment; the main thread
 // may already be in another one (SDL's audio and controllers use COM), so
-// they run on a thread of their own while this one waits.
+// they run on a thread of their own. The main thread keeps handling its
+// window meanwhile (else Windows calls it "not responding"), and the dialog
+// has no owner: an owner on a waiting thread would freeze both.
 std::string OnStaThread(const std::function<std::string(HWND)>& fn) {
-    const HWND owner = Owner();
     std::string out;
+    std::atomic<bool> done{false};
     std::thread t([&] {
         const HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
-        out = fn(owner);
+        out = fn(nullptr);
         if (SUCCEEDED(hr)) CoUninitialize();
+        done = true;
     });
+    while (!done) {
+        MSG msg;
+        while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+        Sleep(15);
+    }
     t.join();
+    // Clicks and keys made while the dialog was open are not for the program.
+    SDL_PumpEvents();
+    SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
     return out;
 }
 
