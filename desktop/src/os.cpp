@@ -12,6 +12,9 @@
 #include <windows.h>
 #include <shobjidl.h>
 #include <shellapi.h>
+#include <SDL_syswm.h>
+#include <functional>
+#include <thread>
 #include <shlobj.h>
 #include <knownfolders.h>
 #else
@@ -34,6 +37,30 @@ std::wstring W(const std::string& s) {
     MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
     return w;
 }
+// The window the dialogs belong to (so they open in front of it).
+HWND Owner() {
+    SDL_Window* w = SDL_GL_GetCurrentWindow();
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (w && SDL_GetWindowWMInfo(w, &info) && info.subsystem == SDL_SYSWM_WINDOWS) return info.info.win.window;
+    return nullptr;
+}
+
+// The file dialogs need a single-threaded COM apartment; the main thread
+// may already be in another one (SDL's audio and controllers use COM), so
+// they run on a thread of their own while this one waits.
+std::string OnStaThread(const std::function<std::string(HWND)>& fn) {
+    const HWND owner = Owner();
+    std::string out;
+    std::thread t([&] {
+        const HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        out = fn(owner);
+        if (SUCCEEDED(hr)) CoUninitialize();
+    });
+    t.join();
+    return out;
+}
+
 std::string U(const wchar_t* w) {
     if (!w) return "";
     const int n = WideCharToMultiByte(CP_UTF8, 0, w, -1, nullptr, 0, nullptr, nullptr);
@@ -81,15 +108,15 @@ void ProcessFree(Process* p) {
 }
 
 std::string PickFolder(const std::string& title) {
+  return OnStaThread([&](HWND owner) {
     std::string out;
-    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     IFileOpenDialog* d = nullptr;
     if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL, IID_IFileOpenDialog, reinterpret_cast<void**>(&d)))) {
         DWORD opts = 0;
         d->GetOptions(&opts);
         d->SetOptions(opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
         d->SetTitle(W(title).c_str());
-        if (SUCCEEDED(d->Show(nullptr))) {
+        if (SUCCEEDED(d->Show(owner))) {
             IShellItem* item = nullptr;
             if (SUCCEEDED(d->GetResult(&item))) {
                 PWSTR path = nullptr;
@@ -103,18 +130,19 @@ std::string PickFolder(const std::string& title) {
         d->Release();
     }
     return out;
+  });
 }
 
 std::string PickFile(const std::string& title, const std::string& desc, const std::string& patterns) {
+  return OnStaThread([&](HWND owner) {
     std::string out;
-    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     IFileOpenDialog* d = nullptr;
     if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL, IID_IFileOpenDialog, reinterpret_cast<void**>(&d)))) {
         const std::wstring wd = W(desc), wp = W(patterns);
         COMDLG_FILTERSPEC spec[2] = {{wd.c_str(), wp.c_str()}, {L"Todos os arquivos", L"*.*"}};
         d->SetFileTypes(2, spec);
         d->SetTitle(W(title).c_str());
-        if (SUCCEEDED(d->Show(nullptr))) {
+        if (SUCCEEDED(d->Show(owner))) {
             IShellItem* item = nullptr;
             if (SUCCEEDED(d->GetResult(&item))) {
                 PWSTR path = nullptr;
@@ -128,12 +156,13 @@ std::string PickFile(const std::string& title, const std::string& desc, const st
         d->Release();
     }
     return out;
+  });
 }
 
 std::string PickSaveFile(const std::string& title, const std::string& default_name, const std::string& desc,
                          const std::string& patterns) {
+  return OnStaThread([&](HWND owner) {
     std::string out;
-    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     IFileSaveDialog* d = nullptr;
     if (SUCCEEDED(CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_ALL, IID_IFileSaveDialog, reinterpret_cast<void**>(&d)))) {
         const std::wstring wd = W(desc), wp = W(patterns);
@@ -142,7 +171,7 @@ std::string PickSaveFile(const std::string& title, const std::string& default_na
         d->SetDefaultExtension(L"zip");
         d->SetFileName(W(default_name).c_str());
         d->SetTitle(W(title).c_str());
-        if (SUCCEEDED(d->Show(nullptr))) {
+        if (SUCCEEDED(d->Show(owner))) {
             IShellItem* item = nullptr;
             if (SUCCEEDED(d->GetResult(&item))) {
                 PWSTR path = nullptr;
@@ -156,6 +185,7 @@ std::string PickSaveFile(const std::string& title, const std::string& default_na
         d->Release();
     }
     return out;
+  });
 }
 
 std::string VideosFolder() {

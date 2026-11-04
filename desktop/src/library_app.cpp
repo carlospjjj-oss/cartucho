@@ -569,10 +569,7 @@ void LibraryUi::DrawHome() {
     const ImVec2 ds = ImGui::GetIO().DisplaySize;
     const float s = win_.scale();
     dl->AddText(win_.fonts().title, win_.fonts().title->FontSize, ImVec2(34 * s, 24 * s), IM_COL32(255, 255, 255, 255), "Cartucho");
-    if (cols_.empty()) {
-        DrawEmpty();
-        return;
-    }
+    if (cols_.empty()) return;   // the welcome window is drawn after the screen's (DrawEmpty)
     carousel_x_ += (centered_ - carousel_x_) * std::min(1.0f, ImGui::GetIO().DeltaTime * 12);
     if (std::fabs(centered_ - carousel_x_) < 0.001f) carousel_x_ = static_cast<float>(centered_);
     const float cw = std::min({ds.x * 0.2f, 300 * s, ds.y * 0.46f / 1.18f});
@@ -649,8 +646,7 @@ void LibraryUi::DrawEmpty() {
     }
     ImGui::SetNextWindowPos(ImVec2(ds.x / 2, ds.y * 0.62f), 0, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(std::min(ds.x - 40, 680 * s), 0));
-    ImGui::Begin("##empty", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize |
-                                         ImGuiWindowFlags_NoBringToFrontOnFocus);
+    ImGui::Begin("##empty", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize);
     ImGui::PushFont(win_.fonts().title);
     ImGui::TextUnformatted(scan_running_ ? "Procurando jogos…" : "Bem-vindo ao Cartucho");
     ImGui::PopFont();
@@ -1143,6 +1139,8 @@ int LibraryUi::Run() {
         if (in_list_) DrawList();
         else DrawHome();
         ImGui::End();
+        // Its own window, after the full-screen one, so it gets the clicks.
+        if (!in_list_ && cols_.empty()) DrawEmpty();
         DrawTopBar();
         DrawModals();
         if (Now() < notice_until_) {

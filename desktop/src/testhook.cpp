@@ -36,6 +36,31 @@ void TestHook::BeforeFrame() {
         std::string name = item.substr(colon + 1);
         const int hold = (!name.empty() && name.back() == '+') ? 10 : 2;
         if (!name.empty() && name.back() == '+') name.pop_back();
+        // "click@x;y": a left click at window point (x, y).
+        if (name.rfind("click@", 0) == 0) {
+            const int x = std::atoi(name.c_str() + 6);
+            const size_t semi = name.find(';');
+            const int y = semi == std::string::npos ? 0 : std::atoi(name.c_str() + semi + 1);
+            if (frame_ != f && frame_ != f + 1 && frame_ != f + hold) continue;
+            SDL_Window* w = SDL_GL_GetCurrentWindow();
+            SDL_Event e{};
+            if (frame_ == f) {
+                e.type = SDL_MOUSEMOTION;
+                e.motion.x = x;
+                e.motion.y = y;
+                if (w) e.motion.windowID = SDL_GetWindowID(w);
+            } else {
+                e.type = frame_ == f + 1 ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
+                e.button.button = SDL_BUTTON_LEFT;
+                e.button.state = frame_ == f + 1 ? SDL_PRESSED : SDL_RELEASED;
+                e.button.clicks = 1;
+                e.button.x = x;
+                e.button.y = y;
+                if (w) e.button.windowID = SDL_GetWindowID(w);
+            }
+            SDL_PushEvent(&e);
+            continue;
+        }
         const SDL_Keycode key = SDL_GetKeyFromName(name.c_str());
         if (key == SDLK_UNKNOWN) continue;
         if (frame_ != f && frame_ != f + hold) continue;
